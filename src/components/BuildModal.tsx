@@ -12,7 +12,13 @@ import {
   ShieldCheck,
   Smartphone,
   Sparkles,
-  QrCode
+  QrCode,
+  AlertTriangle,
+  GitBranch,
+  Info,
+  HelpCircle,
+  Copy,
+  Check
 } from 'lucide-react';
 import { AppConfig, BuildStep } from '../types';
 import { createAabZip, createApkZip, createFullProjectZip } from '../utils/androidProjectGenerator';
@@ -48,6 +54,15 @@ export const BuildModal: React.FC<BuildModalProps> = ({
   const [apkBlob, setApkBlob] = useState<Blob | null>(null);
   const [projectBlob, setProjectBlob] = useState<Blob | null>(null);
   const [showQr, setShowQr] = useState(false);
+  const [showParseTroubleshoot, setShowParseTroubleshoot] = useState(true);
+  const [copiedUrl, setCopiedUrl] = useState(false);
+
+  const handleCopyUrl = () => {
+    navigator.clipboard.writeText(config.url).then(() => {
+      setCopiedUrl(true);
+      setTimeout(() => setCopiedUrl(false), 2500);
+    });
+  };
 
   useEffect(() => {
     if (!isOpen) {
@@ -246,7 +261,7 @@ export const BuildModal: React.FC<BuildModalProps> = ({
                       <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-blue-500 text-white">
                         WAJIB PLAY STORE
                       </span>
-                      <span className="text-[11px] text-slate-400 font-mono">~3.2 MB</span>
+                      <span className="text-[11px] text-slate-400 font-mono">Template Bundle</span>
                     </div>
                     <h4 className="text-base font-bold text-white flex items-center gap-1.5">
                       <PackageCheck className="w-5 h-5 text-blue-400" />
@@ -274,14 +289,14 @@ export const BuildModal: React.FC<BuildModalProps> = ({
                       <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300">
                         UJI COBA HP
                       </span>
-                      <span className="text-[11px] text-slate-400 font-mono">~4.1 MB</span>
+                      <span className="text-[11px] text-amber-400 font-mono">Template Paket</span>
                     </div>
                     <h4 className="text-base font-bold text-white flex items-center gap-1.5">
                       <Smartphone className="w-5 h-5 text-emerald-400" />
                       Unduh Berkas .APK
                     </h4>
                     <p className="text-xs text-slate-400 mt-1">
-                      Universal APK untuk diinstal langsung di smartphone Android tanpa melalui Play Store.
+                      Berkas paket APK template. Untuk APK instalasi 10 MB tanpa galat paket, ikuti panduan di bawah.
                     </p>
                   </div>
 
@@ -294,6 +309,104 @@ export const BuildModal: React.FC<BuildModalProps> = ({
                     <span>Download app-release.apk</span>
                   </button>
                 </div>
+              </div>
+
+              {/* Troubleshooting Card for "Masalah dalam mengurai paket" & 5 KB */}
+              <div className="p-4 bg-gradient-to-r from-amber-950/40 via-slate-900 to-amber-950/30 border border-amber-500/40 rounded-xl space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="text-sm font-bold text-amber-300 flex items-center gap-2">
+                        PENTING: Mengapa Berkas dari Browser Hanya ~5 KB & Muncul "Masalah Mengurai Paket"?
+                      </h4>
+                      <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                        Browser web tidak memiliki mesin kompiler Android SDK (D8 & AAPT2) internal untuk menyusun Dalvik Bytecode (.dex). Berkas APK langsung dari browser hanya berupa <strong>template konfigurasi</strong>.
+                      </p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setShowParseTroubleshoot(!showParseTroubleshoot)}
+                    className="text-xs text-amber-400 hover:text-amber-300 font-semibold underline shrink-0 cursor-pointer"
+                  >
+                    {showParseTroubleshoot ? 'Tutup' : 'Lihat Solusi'}
+                  </button>
+                </div>
+
+                {showParseTroubleshoot && (
+                  <div className="space-y-3 pt-2 border-t border-amber-500/20">
+                    <p className="text-xs font-semibold text-slate-200">
+                      Gunakan 3 cara resmi di bawah agar aplikasi dapat langsung diinstal dan digunakan 100% di HP Android:
+                    </p>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {/* Opsi 1: PWA WebAPK */}
+                      <div className="p-3 bg-slate-950/80 border border-emerald-500/40 rounded-lg flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center gap-1.5 text-emerald-400 font-bold text-xs mb-1.5">
+                            <Smartphone className="w-4 h-4" />
+                            <span>1. PWA Langsung di HP (Instan)</span>
+                          </div>
+                          <p className="text-[11px] text-slate-300 leading-relaxed">
+                            Buka URL website Anda di <strong>Google Chrome HP Android</strong>, klik menu titik tiga (<strong>⋮</strong>), lalu pilih <strong>"Instal Aplikasi"</strong> atau <strong>"Tambahkan ke Layar Utama"</strong>.
+                          </p>
+                          <p className="text-[10px] text-emerald-400/90 mt-1 font-medium">
+                            ✓ Otomatis jadi aplikasi Android native tanpa galat parse!
+                          </p>
+                        </div>
+                        <button
+                          onClick={handleCopyUrl}
+                          className="mt-2.5 w-full py-1.5 px-2.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-[11px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                        >
+                          {copiedUrl ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{copiedUrl ? 'URL Disalin!' : 'Salin URL Website'}</span>
+                        </button>
+                      </div>
+
+                      {/* Opsi 2: GitHub Actions Cloud Build */}
+                      <div className="p-3 bg-slate-950/80 border border-blue-500/40 rounded-lg flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center gap-1.5 text-blue-400 font-bold text-xs mb-1.5">
+                            <GitBranch className="w-4 h-4" />
+                            <span>2. Build APK Asli via GitHub</span>
+                          </div>
+                          <p className="text-[11px] text-slate-300 leading-relaxed">
+                            Workflow <code>build-apk.yml</code> sudah kami buat di repositori GitHub Anda. Buka menu <strong>Actions &gt; Build Real Android APK &gt; Run workflow</strong>.
+                          </p>
+                          <p className="text-[10px] text-blue-400/90 mt-1 font-medium">
+                            ✓ Menghasilkan APK asli (~10 MB) siap unduh dari Artifacts.
+                          </p>
+                        </div>
+                        <div className="mt-2.5 text-center">
+                          <span className="inline-block text-[10px] text-slate-400 font-mono bg-slate-900 px-2 py-1 rounded border border-slate-800">
+                            Gratis via GitHub Actions
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Opsi 3: Android Studio */}
+                      <div className="p-3 bg-slate-950/80 border border-purple-500/40 rounded-lg flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center gap-1.5 text-purple-400 font-bold text-xs mb-1.5">
+                            <FileCode className="w-4 h-4" />
+                            <span>3. Android Studio (Laptop/PC)</span>
+                          </div>
+                          <p className="text-[11px] text-slate-300 leading-relaxed">
+                            Unduh <strong>Android Studio (.ZIP)</strong> di bawah. Ekstrak dan buka foldernya di Android Studio, lalu klik <strong>Build &gt; Build APK(s)</strong>.
+                          </p>
+                          <p className="text-[10px] text-purple-400/90 mt-1 font-medium">
+                            ✓ 100% Valid & siap dirilis ke Google Play Store.
+                          </p>
+                        </div>
+                        <div className="mt-2.5 text-center">
+                          <span className="inline-block text-[10px] text-slate-400 font-mono bg-slate-900 px-2 py-1 rounded border border-slate-800">
+                            Source code Kotlin & Gradle
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Secondary Downloads (Keystore, Source Project, AssetLinks) */}

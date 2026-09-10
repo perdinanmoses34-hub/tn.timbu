@@ -1,0 +1,297 @@
+name: Build Real Android APK & AAB
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'URL Website untuk dijadikan aplikasi Android'
+        required: true
+        default: 'https://perdinanmoses34-hub.github.io/tn.timbu/'
+      app_name:
+        description: 'Nama Aplikasi Android'
+        required: true
+        default: 'Web2App'
+      package_name:
+        description: 'Package Name / Application ID'
+        required: true
+        default: 'com.web2app.app'
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Generate Android Project Sources
+        run: |
+          mkdir -p android/app/src/main/java/com/web2app/app
+          mkdir -p android/app/src/main/res/values
+          mkdir -p android/app/src/main/res/layout
+          mkdir -p android/gradle/wrapper
+
+          TARGET_URL="${{ github.event.inputs.target_url }}"
+          APP_NAME="${{ github.event.inputs.app_name }}"
+          PKG_NAME="${{ github.event.inputs.package_name }}"
+
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="https://perdinanmoses34-hub.github.io/tn.timbu/"
+          fi
+          if [ -z "$APP_NAME" ]; then
+            APP_NAME="Web2App"
+          fi
+          if [ -z "$PKG_NAME" ]; then
+            PKG_NAME="com.web2app.app"
+          fi
+
+          # 1. settings.gradle.kts
+          cat << 'EOF' > android/settings.gradle.kts
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "Web2App"
+          include(":app")
+          EOF
+
+          # 2. Root build.gradle.kts
+          cat << 'EOF' > android/build.gradle.kts
+          plugins {
+              id("com.android.application") version "8.3.2" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.22" apply false
+          }
+          EOF
+
+          # 3. gradle.properties
+          cat << 'EOF' > android/gradle.properties
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.enableJetifier=true
+          EOF
+
+          # 4. App build.gradle.kts
+          cat << EOF > android/app/build.gradle.kts
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+
+          android {
+              namespace = "$PKG_NAME"
+              compileSdk = 35
+
+              defaultConfig {
+                  applicationId = "$PKG_NAME"
+                  minSdk = 29
+                  targetSdk = 35
+                  versionCode = 1
+                  versionName = "1.0.0"
+              }
+
+              buildTypes {
+                  release {
+                      isMinifyEnabled = false
+                      proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+                  }
+                  debug {
+                      isDebuggable = true
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+          }
+
+          dependencies {
+              implementation("androidx.core:core-ktx:1.13.1")
+              implementation("androidx.appcompat:appcompat:1.7.0")
+              implementation("com.google.android.material:material:1.12.0")
+              implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
+              implementation("androidx.webkit:webkit:1.11.0")
+          }
+          EOF
+
+          # 5. Strings and values
+          cat << EOF > android/app/src/main/res/values/strings.xml
+          <resources>
+              <string name="app_name">$APP_NAME</string>
+              <string name="target_url">$TARGET_URL</string>
+          </resources>
+          EOF
+
+          cat << 'EOF' > android/app/src/main/res/values/colors.xml
+          <resources>
+              <color name="primary">#2563EB</color>
+              <color name="status_bar">#1D4ED8</color>
+          </resources>
+          EOF
+
+          # 6. Layout activity_main.xml
+          cat << 'EOF' > android/app/src/main/res/layout/activity_main.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <androidx.swiperefreshlayout.widget.SwipeRefreshLayout 
+              xmlns:android="http://schemas.android.com/apk/res/android"
+              android:id="@+id/swipeRefresh"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent">
+
+              <FrameLayout
+                  android:layout_width="match_parent"
+                  android:layout_height="match_parent">
+
+                  <WebView
+                      android:id="@+id/webView"
+                      android:layout_width="match_parent"
+                      android:layout_height="match_parent" />
+
+                  <ProgressBar
+                      android:id="@+id/progressBar"
+                      style="?android:attr/progressBarStyleHorizontal"
+                      android:layout_width="match_parent"
+                      android:layout_height="4dp"
+                      android:indeterminate="false"
+                      android:max="100" />
+              </FrameLayout>
+          </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+          EOF
+
+          # 7. AndroidManifest.xml
+          cat << EOF > android/app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+              <application
+                  android:allowBackup="true"
+                  android:icon="@android:drawable/sym_def_app_icon"
+                  android:label="@string/app_name"
+                  android:theme="@style/Theme.AppCompat.Light.NoActionBar"
+                  android:usesCleartextTraffic="true">
+                  <activity
+                      android:name="com.web2app.app.MainActivity"
+                      android:exported="true"
+                      android:configChanges="orientation|screenSize|keyboardHidden">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          # 8. MainActivity.kt
+          cat << 'EOF' > android/app/src/main/java/com/web2app/app/MainActivity.kt
+          package com.web2app.app
+
+          import android.annotation.SuppressLint
+          import android.graphics.Bitmap
+          import android.os.Bundle
+          import android.view.View
+          import android.webkit.WebChromeClient
+          import android.webkit.WebView
+          import android.webkit.WebViewClient
+          import android.widget.ProgressBar
+          import androidx.activity.OnBackPressedCallback
+          import androidx.appcompat.app.AppCompatActivity
+          import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+
+          class MainActivity : AppCompatActivity() {
+              private lateinit var webView: WebView
+              private lateinit var swipeRefresh: SwipeRefreshLayout
+              private lateinit var progressBar: ProgressBar
+
+              @SuppressLint("SetJavaScriptEnabled")
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContentView(R.layout.activity_main)
+
+                  webView = findViewById(R.id.webView)
+                  swipeRefresh = findViewById(R.id.swipeRefresh)
+                  progressBar = findViewById(R.id.progressBar)
+
+                  webView.settings.apply {
+                      javaScriptEnabled = true
+                      domStorageEnabled = true
+                      databaseEnabled = true
+                      useWideViewPort = true
+                      loadWithOverviewMode = true
+                  }
+
+                  webView.webViewClient = object : WebViewClient() {
+                      override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                          progressBar.visibility = View.VISIBLE
+                      }
+                      override fun onPageFinished(view: WebView?, url: String?) {
+                          progressBar.visibility = View.GONE
+                          swipeRefresh.isRefreshing = false
+                      }
+                  }
+
+                  webView.webChromeClient = object : WebChromeClient() {
+                      override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                          progressBar.progress = newProgress
+                          if (newProgress >= 100) progressBar.visibility = View.GONE
+                      }
+                  }
+
+                  swipeRefresh.setOnRefreshListener {
+                      webView.reload()
+                  }
+
+                  onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+                      override fun handleOnBackPressed() {
+                          if (webView.canGoBack()) {
+                              webView.goBack()
+                          } else {
+                              finish()
+                          }
+                      }
+                  })
+
+                  val url = getString(R.string.target_url)
+                  webView.loadUrl(url)
+              }
+          }
+          EOF
+
+      - name: Build Android APK
+        working-directory: android
+        run: |
+          gradle wrapper --gradle-version 8.4
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload Real APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-real-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
