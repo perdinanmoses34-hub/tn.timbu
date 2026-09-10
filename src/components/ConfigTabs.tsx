@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   Settings, 
   Palette, 
@@ -23,7 +23,16 @@ import {
   Code2,
   Volume2,
   Sparkles,
-  Radio
+  Radio,
+  Upload,
+  Image as ImageIcon,
+  Trash2,
+  Shapes,
+  Type,
+  Grid,
+  Info,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
 import { AppConfig, ArchitectureType, ScreenOrientation, NotificationItem } from '../types';
 import { generateFingerprint, generateAssetLinksJson } from '../utils/cryptoKeystore';
@@ -40,7 +49,73 @@ interface ConfigTabsProps {
   onSendTestNotification?: (notification: NotificationItem) => void;
 }
 
-const EMOJI_ICONS = ['🛍️', '🛒', '📰', '💼', '🚀', '🌐', '🍔', '🎮', '🩺', '📚', '⚡', '💎', '🎯', '🎧'];
+export const ICON_CATEGORIES = [
+  {
+    id: 'all',
+    name: 'Semua',
+    icon: '✨',
+    icons: [
+      '🛍️', '🛒', '🏷️', '💳', '🏪', '🏬', '📦', '🎁', '💎', '👔',
+      '💼', '📊', '📈', '🏢', '📁', '📝', '📅', '🤝', '💰', '⚖️',
+      '📰', '📢', '🎙️', '📹', '📻', '📺', '📸', '🔔', '💬', '🌐',
+      '🍔', '🍕', '☕', '🍜', '🍰', '🍹', '🍣', '🥑', '🧁', '🥖',
+      '🚀', '💻', '📱', '⚡', '🤖', '⚙️', '🔒', '💡', '🔋', '🔧',
+      '📚', '🎓', '🎨', '🏛️', '🌍', '✍️', '🎵', '🎼', '🎬', '🎭',
+      '🩺', '💊', '🏥', '❤️', '🩹', '🌿', '🧘', '🍎', '🦷', '🔬',
+      '🚗', '✈️', '🏠', '🎮', '🕹️', '🎯', '⚽', '🏆', '🌴', '🛎️'
+    ]
+  },
+  {
+    id: 'store',
+    name: 'Toko & Belanja',
+    icon: '🛍️',
+    icons: ['🛍️', '🛒', '🏷️', '💳', '🏪', '🏬', '📦', '🎁', '💎', '👔', '👠', '👜', '💍', '👗', '🎫']
+  },
+  {
+    id: 'business',
+    name: 'Bisnis & Kantor',
+    icon: '💼',
+    icons: ['💼', '📊', '📈', '🏢', '📁', '📝', '📅', '🤝', '💰', '⚖️', '📋', '📇', '📉', '🗂️', '📌']
+  },
+  {
+    id: 'media',
+    name: 'Media & Sosial',
+    icon: '📰',
+    icons: ['📰', '📢', '🎙️', '📹', '📻', '📺', '📸', '🔔', '💬', '🌐', '📡', '✉️', '🗣️', '🎥', '📮']
+  },
+  {
+    id: 'food',
+    name: 'Kuliner & Kafe',
+    icon: '🍔',
+    icons: ['🍔', '🍕', '☕', '🍜', '🍰', '🍹', '🍣', '🥑', '🧁', '🥖', '🍩', '🍦', '🥞', '🥗', '🍷']
+  },
+  {
+    id: 'tech',
+    name: 'Teknologi & Dev',
+    icon: '🚀',
+    icons: ['🚀', '💻', '📱', '⚡', '🤖', '⚙️', '🔒', '💡', '🔋', '🔧', '🌐', '📡', '🖥️', '🛰️', '🕹️']
+  },
+  {
+    id: 'edu',
+    name: 'Edukasi & Seni',
+    icon: '📚',
+    icons: ['📚', '🎓', '🎨', '🏛️', '🌍', '✍️', '🎵', '🎼', '🎬', '🎭', '✏️', '🖌️', '📖', '🎻', '🎷']
+  },
+  {
+    id: 'health',
+    name: 'Kesehatan & Medis',
+    icon: '🩺',
+    icons: ['🩺', '💊', '🏥', '❤️', '🩹', '🌿', '🧘', '🍎', '🦷', '🔬', '🚑', '🌡️', '🧬', '💉', '🧠']
+  },
+  {
+    id: 'lifestyle',
+    name: 'Layanan & Hiburan',
+    icon: '🚗',
+    icons: ['🚗', '✈️', '🏠', '🎮', '🕹️', '🎯', '⚽', '🏆', '🌴', '🛎️', '💈', '🎪', '🚕', '🚢', '🎳']
+  },
+];
+
+const QUICK_MONOGRAMS = ['TN', 'A', 'B', 'M', 'P', 'S', 'T', 'W', '🔥', '⭐', '⚡', '👑'];
 
 const THEME_COLORS = [
   '#2563EB', // Blue
@@ -51,6 +126,8 @@ const THEME_COLORS = [
   '#0891B2', // Cyan
   '#4F46E5', // Indigo
   '#BE185D', // Pink
+  '#0F172A', // Slate
+  '#10B981', // Green
 ];
 
 export const ConfigTabs: React.FC<ConfigTabsProps> = ({ config, onChangeConfig, onSendTestNotification }) => {
@@ -61,11 +138,49 @@ export const ConfigTabs: React.FC<ConfigTabsProps> = ({ config, onChangeConfig, 
   const [copiedSnippet, setCopiedSnippet] = useState(false);
   const [snippetType, setSnippetType] = useState<'nodejs' | 'curl' | 'payload'>('nodejs');
 
+  // Icon customization state
+  const [selectedIconCategory, setSelectedIconCategory] = useState('all');
+  const [iconInputMode, setIconInputMode] = useState<'catalog' | 'custom_text' | 'upload'>('catalog');
+  const [customSymbolText, setCustomSymbolText] = useState('');
+  const [iconUploadError, setIconUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // Push notification composer state
   const [testTitle, setTestTitle] = useState('🎉 Promo Spesial Hari Ini!');
   const [testBody, setTestBody] = useState('Dapatkan diskon potongan harga hingga 50% untuk pesanan pertama Anda.');
   const [testUrl, setTestUrl] = useState('');
   const [sentSuccess, setSentSuccess] = useState(false);
+
+  // Handle Image File Upload for Icon
+  const handleIconFileUpload = (file: File) => {
+    setIconUploadError(null);
+    if (!file.type.startsWith('image/')) {
+      setIconUploadError('Silakan pilih berkas gambar (PNG, JPG, atau WEBP).');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setIconUploadError('Ukuran berkas maksimal 2 MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result as string;
+      if (dataUrl) {
+        onChangeConfig({
+          icon: {
+            ...config.icon,
+            type: 'uploaded',
+            value: dataUrl,
+          },
+        });
+      }
+    };
+    reader.onerror = () => {
+      setIconUploadError('Gagal membaca berkas gambar.');
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Handle Keystore Regeneration
   const handleRegenerateFingerprint = () => {
@@ -366,38 +481,320 @@ export const ConfigTabs: React.FC<ConfigTabsProps> = ({ config, onChangeConfig, 
 
         {/* TAB 2: TAMPILAN & IKON */}
         {activeTab === 'design' && (
-          <div className="space-y-5">
-            {/* App Icon Generator */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-2">
-                Ikon Aplikasi (App Icon)
-              </label>
-              <div className="flex flex-wrap items-center gap-4 p-4 bg-slate-950 border border-slate-800 rounded-xl">
-                {/* Icon Preview */}
-                <div 
-                  className={`w-16 h-16 rounded-2xl flex items-center justify-center text-3xl shadow-lg border border-white/10 shrink-0`}
-                  style={{ backgroundColor: config.icon.bgColor }}
-                >
-                  {config.icon.value}
+          <div className="space-y-6">
+            {/* App Icon Studio */}
+            <div className="p-4 sm:p-5 bg-slate-950 border border-slate-800 rounded-2xl space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                <div>
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Shapes className="w-4 h-4 text-blue-400" />
+                    Studio Desain Ikon Aplikasi (App Launcher Icon)
+                  </h4>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Ikon ini akan otomatis diekspor sebagai aset launcher Android nyata (Semua resolusi Mipmap & Adaptive Icon).
+                  </p>
                 </div>
 
-                <div className="space-y-2 flex-1">
-                  <span className="text-xs text-slate-400 font-medium block">Pilih Simbol / Emoji:</span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {EMOJI_ICONS.map((emoji) => (
-                      <button
-                        key={emoji}
-                        onClick={() => onChangeConfig({ icon: { ...config.icon, value: emoji, type: 'emoji' } })}
-                        className={`w-8 h-8 rounded-lg flex items-center justify-center text-base transition-all cursor-pointer ${
-                          config.icon.value === emoji
-                            ? 'bg-blue-600 scale-110 shadow'
-                            : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-                        }`}
-                      >
-                        {emoji}
-                      </button>
-                    ))}
+                {/* Shape Selector */}
+                <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 self-start sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={() => onChangeConfig({ icon: { ...config.icon, shape: 'squircle' } })}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                      config.icon.shape === 'squircle' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                    }`}
+                    title="Bentuk Kotak Lengkung Modern (Samsung OneUI / Oppo / Xiaomi)"
+                  >
+                    Squircle
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onChangeConfig({ icon: { ...config.icon, shape: 'circle' } })}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                      config.icon.shape === 'circle' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                    }`}
+                    title="Bentuk Lingkaran Penuh (Google Pixel)"
+                  >
+                    Lingkaran
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onChangeConfig({ icon: { ...config.icon, shape: 'rounded' } })}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                      config.icon.shape === 'rounded' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                    }`}
+                    title="Bentuk Persegi Rounded Halus"
+                  >
+                    Rounded
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onChangeConfig({ icon: { ...config.icon, shape: 'full' } })}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                      config.icon.shape === 'full' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                    }`}
+                    title="Bentuk Kotak Penuh"
+                  >
+                    Kotak
+                  </button>
+                </div>
+              </div>
+
+              {/* Icon Preview & Style Controls */}
+              <div className="flex flex-col md:flex-row items-center gap-5 p-4 bg-slate-900/60 rounded-xl border border-slate-800/80">
+                {/* Visual Icon Live Preview */}
+                <div className="flex flex-col items-center gap-2 shrink-0">
+                  <div
+                    className={`w-20 h-20 shadow-2xl flex items-center justify-center transition-all overflow-hidden border border-white/20 relative ${
+                      config.icon.shape === 'circle'
+                        ? 'rounded-full'
+                        : config.icon.shape === 'squircle'
+                        ? 'rounded-[26px]'
+                        : config.icon.shape === 'rounded'
+                        ? 'rounded-2xl'
+                        : 'rounded-md'
+                    }`}
+                    style={{ backgroundColor: config.icon.bgColor || '#2563EB' }}
+                  >
+                    {config.icon.type === 'uploaded' && config.icon.value ? (
+                      <img
+                        src={config.icon.value}
+                        alt="Custom Icon"
+                        className="w-full h-full object-contain p-2"
+                      />
+                    ) : (
+                      <span className="text-4xl select-none">
+                        {config.icon.value || config.appName.charAt(0).toUpperCase() || '★'}
+                      </span>
+                    )}
                   </div>
+                  <span className="text-[10px] font-mono text-slate-400">192x192 HD</span>
+                </div>
+
+                {/* Mode Selector Tabs */}
+                <div className="flex-1 w-full space-y-3">
+                  <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-2">
+                    <button
+                      type="button"
+                      onClick={() => setIconInputMode('catalog')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                        iconInputMode === 'catalog'
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'bg-slate-800 text-slate-300 hover:text-white'
+                      }`}
+                    >
+                      <Grid className="w-3.5 h-3.5" />
+                      <span>Katalog Ikon (80+ Emoji)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIconInputMode('custom_text')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                        iconInputMode === 'custom_text'
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'bg-slate-800 text-slate-300 hover:text-white'
+                      }`}
+                    >
+                      <Type className="w-3.5 h-3.5" />
+                      <span>Ketik Simbol / Huruf Sendiri</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIconInputMode('upload')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                        iconInputMode === 'upload'
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'bg-slate-800 text-slate-300 hover:text-white'
+                      }`}
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Unggah Logo Sendiri (PNG/JPG)</span>
+                    </button>
+                  </div>
+
+                  {/* MODE 1: CATALOG OF ICONS */}
+                  {iconInputMode === 'catalog' && (
+                    <div className="space-y-2.5">
+                      {/* Category Pills */}
+                      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                        {ICON_CATEGORIES.map((cat) => (
+                          <button
+                            key={cat.id}
+                            type="button"
+                            onClick={() => setSelectedIconCategory(cat.id)}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-medium whitespace-nowrap transition-all cursor-pointer ${
+                              selectedIconCategory === cat.id
+                                ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40 font-semibold'
+                                : 'bg-slate-800/80 text-slate-400 hover:text-slate-200 border border-transparent'
+                            }`}
+                          >
+                            <span className="mr-1">{cat.icon}</span>
+                            {cat.name}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Icon Grid */}
+                      <div className="grid grid-cols-8 sm:grid-cols-10 md:grid-cols-12 gap-1.5 max-h-36 overflow-y-auto p-1 bg-slate-950/60 rounded-xl border border-slate-800/60">
+                        {(ICON_CATEGORIES.find((c) => c.id === selectedIconCategory)?.icons || ICON_CATEGORIES[0].icons).map((emoji, idx) => (
+                          <button
+                            key={`${emoji}-${idx}`}
+                            type="button"
+                            onClick={() => onChangeConfig({ icon: { ...config.icon, value: emoji, type: 'emoji' } })}
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center text-lg transition-all cursor-pointer ${
+                              config.icon.value === emoji && config.icon.type !== 'uploaded'
+                                ? 'bg-blue-600 scale-110 shadow-lg text-white ring-2 ring-blue-400'
+                                : 'bg-slate-800/70 hover:bg-slate-700 text-slate-200'
+                            }`}
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* MODE 2: CUSTOM TEXT / MONOGRAM */}
+                  {iconInputMode === 'custom_text' && (
+                    <div className="space-y-2.5">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          maxLength={3}
+                          value={customSymbolText}
+                          onChange={(e) => {
+                            setCustomSymbolText(e.target.value);
+                            if (e.target.value.trim()) {
+                              onChangeConfig({ icon: { ...config.icon, value: e.target.value.trim(), type: 'emoji' } });
+                            }
+                          }}
+                          placeholder="Ketik 1-3 huruf inisial atau emoji apa saja (cth: TN, A, 🔥)"
+                          className="flex-1 px-3.5 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white text-xs font-semibold focus:outline-none focus:border-blue-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (customSymbolText.trim()) {
+                              onChangeConfig({ icon: { ...config.icon, value: customSymbolText.trim(), type: 'emoji' } });
+                            }
+                          }}
+                          className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-colors"
+                        >
+                          Terapkan
+                        </button>
+                      </div>
+
+                      {/* Quick Monogram Chips */}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[11px] text-slate-400 mr-1">Inisial Populer:</span>
+                        {QUICK_MONOGRAMS.map((mono) => (
+                          <button
+                            key={mono}
+                            type="button"
+                            onClick={() => {
+                              setCustomSymbolText(mono);
+                              onChangeConfig({ icon: { ...config.icon, value: mono, type: 'emoji' } });
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700/80 transition-colors"
+                          >
+                            {mono}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* MODE 3: UPLOAD LOGO */}
+                  {iconInputMode === 'upload' && (
+                    <div className="space-y-2">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleIconFileUpload(file);
+                        }}
+                      />
+
+                      <div
+                        onClick={() => fileInputRef.current?.click()}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const file = e.dataTransfer.files?.[0];
+                          if (file) handleIconFileUpload(file);
+                        }}
+                        className="p-4 border-2 border-dashed border-slate-700 hover:border-blue-500 rounded-xl bg-slate-950/60 hover:bg-slate-900/60 flex flex-col items-center justify-center gap-1.5 cursor-pointer transition-colors text-center"
+                      >
+                        <Upload className="w-5 h-5 text-blue-400" />
+                        <span className="text-xs font-semibold text-white">
+                          Klik atau Seret Berkas Logo ke Sini
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          Format PNG transparan, JPG, atau WEBP (Maks 2 MB).
+                        </span>
+                      </div>
+
+                      {iconUploadError && (
+                        <p className="text-[11px] text-rose-400 flex items-center gap-1 font-medium">
+                          <AlertCircle className="w-3.5 h-3.5" />
+                          {iconUploadError}
+                        </p>
+                      )}
+
+                      {config.icon.type === 'uploaded' && config.icon.value && (
+                        <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs">
+                          <span className="text-emerald-400 font-semibold flex items-center gap-1.5">
+                            <CheckCircle2 className="w-4 h-4" />
+                            Logo kustom Anda aktif digunakan sebagai ikon APK
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => onChangeConfig({ icon: { ...config.icon, type: 'emoji', value: '🛍️' } })}
+                            className="text-slate-400 hover:text-rose-400 flex items-center gap-1 text-[11px] transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Hapus</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Background Color & Presets */}
+              <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-slate-800/80">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-slate-300">Warna Latar Ikon (Background):</span>
+                  <input
+                    type="color"
+                    value={config.icon.bgColor || config.themeColor}
+                    onChange={(e) => onChangeConfig({ icon: { ...config.icon, bgColor: e.target.value } })}
+                    className="w-8 h-8 rounded-lg bg-slate-950 border border-slate-700 cursor-pointer"
+                  />
+                  <span className="text-xs font-mono text-slate-400">{config.icon.bgColor || config.themeColor}</span>
+                </div>
+
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {THEME_COLORS.map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => onChangeConfig({ 
+                        themeColor: color,
+                        icon: { ...config.icon, bgColor: color }
+                      })}
+                      className={`w-6 h-6 rounded-full border transition-transform hover:scale-110 cursor-pointer ${
+                        (config.icon.bgColor || config.themeColor) === color ? 'ring-2 ring-white scale-110 border-white' : 'border-white/20'
+                      }`}
+                      style={{ backgroundColor: color }}
+                    />
+                  ))}
                 </div>
               </div>
             </div>
@@ -824,6 +1221,68 @@ export const ConfigTabs: React.FC<ConfigTabsProps> = ({ config, onChangeConfig, 
                   {config.firebase.enabled ? 'Aktif' : 'Nonaktif'}
                 </span>
               </label>
+            </div>
+
+            {/* EDUCATIONAL PUSH NOTIFICATION GUIDE & STATUS */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-4">
+              <div className="flex items-center gap-2">
+                <Info className="w-4 h-4 text-amber-400" />
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                  Panduan: Apakah Push Notifikasi Langsung Aktif Saat Aplikasi Jadi?
+                </h4>
+              </div>
+
+              {/* Status Comparison Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="p-3.5 rounded-xl bg-slate-900 border border-emerald-500/30 space-y-1.5">
+                  <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Di Dalam Kode APK: 100% SUDAH AKTIF</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    Aplikasi yang dibuat Web2App sudah otomatis menyertakan library resmi Firebase Cloud Messaging, izin sistem Android 13-15 (<code>POST_NOTIFICATIONS</code>), Notification Channel, dan Service background penerima pesan. Begitu pengguna memasang APK di HP, aplikasi langsung siap menerima notifikasi.
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-slate-900 border border-amber-500/30 space-y-1.5">
+                  <div className="flex items-center gap-2 text-amber-400 font-bold text-xs">
+                    <AlertCircle className="w-4 h-4" />
+                    <span>Di Sisi Pengirim (Cloud): Butuh Akun Firebase (Gratis)</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    Sistem keamanan Google Play mewajibkan setiap aplikasi terdaftar di Firebase Console pribadi milik Anda. Hal ini untuk memastikan hanya Anda sebagai pemilik resmi yang dapat mengirimkan notifikasi kepada para pengguna (mencegah spam ilegal).
+                  </p>
+                </div>
+              </div>
+
+              {/* 3 Step Workflow */}
+              <div className="pt-2 border-t border-slate-800">
+                <span className="block text-xs font-bold text-white mb-2.5">
+                  🚀 3 Langkah Praktis Mengirim Notifikasi ke Semua HP Pengguna:
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                  <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1">
+                    <span className="font-bold text-amber-400 block text-[11px]">1. Daftar Firebase (Gratis)</span>
+                    <p className="text-[11px] text-slate-400">
+                      Buka <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" className="text-blue-400 underline">console.firebase.google.com</a>, buat proyek baru, lalu masukkan <code>Project ID</code> & <code>Sender ID</code> Anda ke formulir di bawah.
+                    </p>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1">
+                    <span className="font-bold text-blue-400 block text-[11px]">2. Pasang APK di HP</span>
+                    <p className="text-[11px] text-slate-400">
+                      Instal APK hasil kompilasi di smartphone Android. Saat dibuka pertama kali, sistem Android akan meminta izin notifikasi dan HP otomatis terdaftar.
+                    </p>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1">
+                    <span className="font-bold text-emerald-400 block text-[11px]">3. Kirim Pesan Kapan Saja</span>
+                    <p className="text-[11px] text-slate-400">
+                      Kirim langsung dari dashboard Firebase menu <b>Messaging &gt; New Campaign</b> tanpa koding, atau otomatis dari backend website via script di bawah.
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* LIVE TESTER & SENDER COMPOSER */}

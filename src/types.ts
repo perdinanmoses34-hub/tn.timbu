@@ -31,7 +31,7 @@ export interface AppIconConfig {
   type: IconType;
   value: string; // url, emoji, or data URL
   bgColor: string;
-  shape: 'circle' | 'squircle' | 'rounded';
+  shape: 'circle' | 'squircle' | 'rounded' | 'full';
 }
 
 export interface SplashScreenConfig {

@@ -58,7 +58,8 @@ export function saveGitHubConfig(config: Partial<GitHubConfig>): void {
  * Synchronizes the latest build-apk.yml workflow directly to the user's GitHub repository.
  */
 export async function syncWorkflowFileToRepo(
-  config: GitHubConfig
+  config: GitHubConfig,
+  customWorkflowYml?: string
 ): Promise<{ success: boolean; message: string }> {
   if (!config.token.trim()) {
     return { success: false, message: 'Token GitHub belum diisi.' };
@@ -84,9 +85,11 @@ export async function syncWorkflowFileToRepo(
       existingSha = data.sha;
     }
 
+    const workflowContentToSync = customWorkflowYml || LATEST_WORKFLOW_YML;
+
     const putUrl = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${path}`;
     // Base64 encode UTF-8 string safely
-    const utf8Bytes = new TextEncoder().encode(LATEST_WORKFLOW_YML);
+    const utf8Bytes = new TextEncoder().encode(workflowContentToSync);
     let binary = '';
     for (let i = 0; i < utf8Bytes.length; i++) {
       binary += String.fromCharCode(utf8Bytes[i]);
@@ -101,7 +104,7 @@ export async function syncWorkflowFileToRepo(
         'X-GitHub-Api-Version': '2022-11-28',
       },
       body: JSON.stringify({
-        message: 'ci: update Android build workflow to latest version (Java 17, Gradle 8.4, SDK 34)',
+        message: 'ci: update Android build workflow with custom app icon and styling',
         content: base64Content,
         branch,
         ...(existingSha ? { sha: existingSha } : {}),
@@ -130,11 +133,12 @@ export async function syncWorkflowFileToRepo(
  */
 export async function triggerCloudBuild(
   config: GitHubConfig,
-  inputs: { target_url: string; app_name: string; package_name: string }
+  inputs: { target_url: string; app_name: string; package_name: string },
+  customWorkflowYml?: string
 ): Promise<{ success: boolean; error?: string }> {
-  // Ensure workflow file is up to date on GitHub before dispatching
+  // Ensure workflow file is up to date on GitHub with custom icon & styling before dispatching
   if (config.token.trim()) {
-    await syncWorkflowFileToRepo(config).catch(() => {});
+    await syncWorkflowFileToRepo(config, customWorkflowYml).catch(() => {});
   }
 
   const url = `https://api.github.com/repos/${config.owner}/${config.repo}/actions/workflows/build-apk.yml/dispatches`;
