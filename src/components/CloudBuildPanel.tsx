@@ -42,7 +42,8 @@ interface CloudBuildPanelProps {
 
 export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
   const [ghConfig, setGhConfig] = useState<GitHubConfig>(() => getSavedGitHubConfig());
-  const [showConfigSettings, setShowConfigSettings] = useState(false);
+  const [showConfigSettings, setShowConfigSettings] = useState(() => !getSavedGitHubConfig().token);
+  const [showTokenGuide, setShowTokenGuide] = useState(() => !getSavedGitHubConfig().token);
   const [isTriggering, setIsTriggering] = useState(false);
   const [activeRun, setActiveRun] = useState<WorkflowRun | null>(null);
   const [artifacts, setArtifacts] = useState<ArtifactItem[]>([]);
@@ -263,6 +264,49 @@ export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
                   className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white font-mono focus:border-blue-500 focus:outline-none"
                 />
               </div>
+            </div>
+
+            {/* Quick 3-Step Guide to Generate Token */}
+            <div className="p-3 bg-blue-950/30 border border-blue-500/30 rounded-lg space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-blue-300 flex items-center gap-1.5">
+                  <HelpCircle className="w-3.5 h-3.5" />
+                  Cara Mendapatkan Token GitHub (Gratis & 30 Detik):
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowTokenGuide(!showTokenGuide)}
+                  className="text-[10px] text-blue-400 hover:text-blue-300 underline cursor-pointer"
+                >
+                  {showTokenGuide ? 'Tutup Panduan' : 'Buka Panduan'}
+                </button>
+              </div>
+
+              {showTokenGuide && (
+                <div className="space-y-2 text-[11px] text-slate-300 pt-1 border-t border-blue-500/20">
+                  <ol className="list-decimal list-inside space-y-1.5 text-slate-300">
+                    <li>
+                      Klik tombol biru di bawah ini untuk membuka formulir token GitHub (izin <strong>repo</strong> dan <strong>workflow</strong> sudah otomatis dicentang).
+                    </li>
+                    <li>
+                      Gulir ke bagian paling bawah halaman GitHub, lalu klik tombol hijau <strong>"Generate token"</strong>.
+                    </li>
+                    <li>
+                      Salin (Copy) kode token yang berawalan <code>ghp_...</code>, lalu tempel (Paste) ke kolom Token di atas.
+                    </li>
+                  </ol>
+
+                  <a
+                    href="https://github.com/settings/tokens/new?scopes=repo,workflow&description=Web2App%20Studio%20Cloud%20Compiler"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-1 w-full py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors shadow"
+                  >
+                    <span>Buka Halaman Pembuatan Token GitHub (Otomatis Dicentang)</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              )}
             </div>
 
             <p className="text-[11px] text-slate-400 flex items-center gap-1.5">
