@@ -3,6 +3,8 @@
  * Triggers workflow_dispatch and tracks build status for real Android APK compilation.
  */
 
+import { LATEST_WORKFLOW_YML } from './workflowTemplate';
+
 export interface GitHubConfig {
   owner: string;
   repo: string;
@@ -53,12 +55,88 @@ export function saveGitHubConfig(config: Partial<GitHubConfig>): void {
 }
 
 /**
+ * Synchronizes the latest build-apk.yml workflow directly to the user's GitHub repository.
+ */
+export async function syncWorkflowFileToRepo(
+  config: GitHubConfig
+): Promise<{ success: boolean; message: string }> {
+  if (!config.token.trim()) {
+    return { success: false, message: 'Token GitHub belum diisi.' };
+  }
+
+  const path = '.github/workflows/build-apk.yml';
+  const branch = config.branch || 'main';
+  const getUrl = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${path}?ref=${branch}`;
+
+  let existingSha: string | undefined;
+
+  try {
+    const getRes = await fetch(getUrl, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${config.token.trim()}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+
+    if (getRes.ok) {
+      const data = await getRes.json();
+      existingSha = data.sha;
+    }
+
+    const putUrl = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${path}`;
+    // Base64 encode UTF-8 string safely
+    const utf8Bytes = new TextEncoder().encode(LATEST_WORKFLOW_YML);
+    let binary = '';
+    for (let i = 0; i < utf8Bytes.length; i++) {
+      binary += String.fromCharCode(utf8Bytes[i]);
+    }
+    const base64Content = btoa(binary);
+
+    const putRes = await fetch(putUrl, {
+      method: 'PUT',
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${config.token.trim()}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+      body: JSON.stringify({
+        message: 'ci: update Android build workflow to latest version (Java 17, Gradle 8.4, SDK 34)',
+        content: base64Content,
+        branch,
+        ...(existingSha ? { sha: existingSha } : {}),
+      }),
+    });
+
+    if (putRes.ok) {
+      return { success: true, message: 'Alur kerja build-apk.yml berhasil disinkronkan ke repositori GitHub.' };
+    }
+
+    const errData = await putRes.json().catch(() => ({}));
+    return {
+      success: false,
+      message: errData.message || `Gagal menyinkronkan berkas ke GitHub (HTTP ${putRes.status})`,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: err?.message || 'Gagal menghubungi GitHub API untuk sinkronisasi alur kerja.',
+    };
+  }
+}
+
+/**
  * Dispatches the build-apk.yml workflow on GitHub Actions.
  */
 export async function triggerCloudBuild(
   config: GitHubConfig,
   inputs: { target_url: string; app_name: string; package_name: string }
 ): Promise<{ success: boolean; error?: string }> {
+  // Ensure workflow file is up to date on GitHub before dispatching
+  if (config.token.trim()) {
+    await syncWorkflowFileToRepo(config).catch(() => {});
+  }
+
   const url = `https://api.github.com/repos/${config.owner}/${config.repo}/actions/workflows/build-apk.yml/dispatches`;
 
   try {

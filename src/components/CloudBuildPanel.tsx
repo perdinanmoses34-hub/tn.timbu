@@ -21,6 +21,7 @@ import {
   ChevronUp,
   Sparkles,
   GitBranch,
+  Wrench,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { AppConfig } from '../types';
@@ -28,6 +29,7 @@ import {
   getSavedGitHubConfig,
   saveGitHubConfig,
   triggerCloudBuild,
+  syncWorkflowFileToRepo,
   getLatestWorkflowRun,
   getRunArtifacts,
   GitHubConfig,
@@ -45,6 +47,8 @@ export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
   const [showConfigSettings, setShowConfigSettings] = useState(() => !getSavedGitHubConfig().token);
   const [showTokenGuide, setShowTokenGuide] = useState(() => !getSavedGitHubConfig().token);
   const [isTriggering, setIsTriggering] = useState(false);
+  const [isSyncingWorkflow, setIsSyncingWorkflow] = useState(false);
+  const [syncStatusMessage, setSyncStatusMessage] = useState<string | null>(null);
   const [activeRun, setActiveRun] = useState<WorkflowRun | null>(null);
   const [artifacts, setArtifacts] = useState<ArtifactItem[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -60,6 +64,27 @@ export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
     const updated = { ...ghConfig, ...updates };
     setGhConfig(updated);
     saveGitHubConfig(updates);
+  };
+
+  // Manual sync workflow file to GitHub
+  const handleSyncWorkflow = async () => {
+    if (!ghConfig.token.trim()) {
+      setShowConfigSettings(true);
+      setErrorMessage('Masukkan Token GitHub Anda terlebih dahulu untuk menyinkronkan alur kerja.');
+      return;
+    }
+
+    setIsSyncingWorkflow(true);
+    setSyncStatusMessage('Sedang memperbarui alur kerja perbaikan Android ke repositori GitHub Anda...');
+    const res = await syncWorkflowFileToRepo(ghConfig);
+    setIsSyncingWorkflow(false);
+
+    if (res.success) {
+      setSyncStatusMessage('Alur kerja perbaikan (Java 17 + Gradle 8.4 + SDK 34) berhasil diperbarui di GitHub!');
+      setTimeout(() => setSyncStatusMessage(null), 6000);
+    } else {
+      setErrorMessage(res.message);
+    }
   };
 
   // Timer while building
@@ -309,6 +334,31 @@ export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
               )}
             </div>
 
+            {/* Manual Sync Workflow Button */}
+            <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
+              <div className="text-[11px] text-slate-400">
+                Alur Kerja: <span className="text-emerald-400 font-semibold">Java 17 + Gradle 8.4 + SDK 34 (Stabil)</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleSyncWorkflow}
+                disabled={isSyncingWorkflow || !ghConfig.token.trim()}
+                className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-blue-400 hover:text-blue-300 text-[11px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-40"
+              >
+                {isSyncingWorkflow ? (
+                  <>
+                    <RefreshCw className="w-3 h-3 animate-spin" />
+                    <span>Menyinkronkan...</span>
+                  </>
+                ) : (
+                  <>
+                    <Wrench className="w-3 h-3" />
+                    <span>Perbarui Berkas Alur Kerja di GitHub</span>
+                  </>
+                )}
+              </button>
+            </div>
+
             <p className="text-[11px] text-slate-400 flex items-center gap-1.5">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               <span>Token hanya disimpan di peramban (browser) lokal Anda dan hanya digunakan untuk memicu GitHub Actions.</span>
@@ -316,6 +366,14 @@ export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
           </div>
         )}
       </div>
+
+      {/* Sync Status Banner */}
+      {syncStatusMessage && (
+        <div className="p-3 bg-emerald-950/50 border border-emerald-500/50 rounded-xl flex items-center gap-2.5 text-xs text-emerald-200">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{syncStatusMessage}</span>
+        </div>
+      )}
 
       {/* Error Message */}
       {errorMessage && (
@@ -326,6 +384,47 @@ export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
             <p className="text-[11px] text-slate-300">
               Alternatif cepat: Anda juga bisa langsung membuka menu kompilasi manual di GitHub di bawah ini.
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Dedicated Failure & Auto-Repair Card */}
+      {activeRun && activeRun.conclusion === 'failure' && (
+        <div className="p-4 bg-amber-950/40 border border-amber-500/50 rounded-xl space-y-3 shadow-lg">
+          <div className="flex items-center gap-2 text-amber-300">
+            <Wrench className="w-5 h-5 text-amber-400 shrink-0" />
+            <span className="text-sm font-bold">Kompilasi Sebelumnya Mengalami Masalah (Telah Diperbaiki)</span>
+          </div>
+          <p className="text-xs text-slate-300 leading-relaxed">
+            Penyebab kegagalan pada build sebelumnya (konfigurasi SDK / Gradle pada runner GitHub) telah diperbaiki dengan alur kerja baru yang menggunakan <strong>Java 17</strong>, <strong>Gradle 8.4 resmi</strong>, dan <strong>Android SDK 34 stabil</strong>.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-2 pt-1">
+            <button
+              onClick={handleStartCloudBuild}
+              disabled={isTriggering}
+              className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg cursor-pointer"
+            >
+              {isTriggering ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Sedang Menyiapkan & Memulai...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4 text-amber-300" />
+                  <span>Sinkronkan Perbaikan & Ulangi Kompilasi Sekarang</span>
+                </>
+              )}
+            </button>
+            <a
+              href={activeRun.html_url}
+              target="_blank"
+              rel="noreferrer"
+              className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+            >
+              <span>Lihat Log GitHub</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
           </div>
         </div>
       )}

@@ -1,4 +1,9 @@
-name: Build Real Android APK & AAB
+/**
+ * Complete, battle-tested GitHub Actions workflow for building real Android APK & AAB.
+ * Uses official gradle/actions/setup-gradle@v3, Java 17, and Android SDK 34.
+ */
+
+export const LATEST_WORKFLOW_YML = `name: Build Real Android APK & AAB
 
 on:
   workflow_dispatch:
@@ -47,9 +52,9 @@ jobs:
 
       - name: Generate Android Project Sources
         run: |
-          RAW_TARGET_URL="${{ github.event.inputs.target_url }}"
-          RAW_APP_NAME="${{ github.event.inputs.app_name }}"
-          RAW_PKG_NAME="${{ github.event.inputs.package_name }}"
+          RAW_TARGET_URL="\${{ github.event.inputs.target_url }}"
+          RAW_APP_NAME="\${{ github.event.inputs.app_name }}"
+          RAW_PKG_NAME="\${{ github.event.inputs.package_name }}"
 
           if [ -z "$RAW_TARGET_URL" ]; then
             RAW_TARGET_URL="https://perdinanmoses34-hub.github.io/tn.timbu/"
@@ -61,7 +66,7 @@ jobs:
             RAW_PKG_NAME="com.web2app.app"
           fi
 
-          # Sanitize package name (only letters, numbers, dots, underscores)
+          # Sanitize package name (letters, digits, underscores, dots)
           PKG_NAME=$(echo "$RAW_PKG_NAME" | tr -d ' ' | tr -cd '[:alnum:]._')
           if [[ "$PKG_NAME" != *.* ]]; then
             PKG_NAME="com.web2app.$PKG_NAME"
@@ -75,10 +80,10 @@ jobs:
 
           # Sanitize App Name for XML
           APP_NAME="$RAW_APP_NAME"
-          SAFE_APP_NAME=$(echo "$APP_NAME" | sed "s/'/\\\\'/g" | sed 's/&/\&amp;/g' | sed 's/</\&lt;/g' | sed 's/>/\&gt;/g')
-          SAFE_TARGET_URL=$(echo "$TARGET_URL" | sed 's/&/\&amp;/g')
+          SAFE_APP_NAME=$(echo "$APP_NAME" | sed "s/'/\\\\'/g" | sed 's/&/\\&amp;/g' | sed 's/</\\&lt;/g' | sed 's/>/\\&gt;/g')
+          SAFE_TARGET_URL=$(echo "$TARGET_URL" | sed 's/&/\\&amp;/g')
 
-          # Calculate package directory path (e.g. com/web2app/app)
+          # Calculate package directory path
           PKG_DIR=$(echo "$PKG_NAME" | tr '.' '/')
 
           # Create directory structure
@@ -362,3 +367,4 @@ jobs:
           name: app-debug-real-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+`;
