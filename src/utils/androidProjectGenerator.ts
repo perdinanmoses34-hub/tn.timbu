@@ -74,6 +74,7 @@ ${permissionsList.join('\n')}
         android:supportsRtl="true"
         android:theme="@style/Theme.App"
         android:hardwareAccelerated="true"
+        android:requestLegacyExternalStorage="true"
         android:usesCleartextTraffic="true">
 
         <activity
@@ -496,6 +497,7 @@ export async function createAabZip(config: AppConfig): Promise<Blob> {
         packageName: config.packageName,
         version: config.versionName,
         targetSdk: 35,
+        minSdk: config.minSdk,
         architecture: config.architecture
       }, null, 2));
       if (config.firebase?.enabled) {

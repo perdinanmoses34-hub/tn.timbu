@@ -76,7 +76,7 @@ export function getInitialAppConfig(presetUrl: string = 'https://tokoonline-stor
     orientation: 'portrait',
     architecture: 'webview',
     targetSdk: 35, // Android 15 required for Google Play
-    minSdk: 24,    // Android 7.0+ (99.4% device coverage)
+    minSdk: 29,    // Android 10.0+ (Dukungan penuh Android 10 ke atas)
     permissions: {
       camera: true,
       location: true,

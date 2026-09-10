@@ -265,15 +265,53 @@ export const ConfigTabs: React.FC<ConfigTabsProps> = ({ config, onChangeConfig, 
 
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Target SDK</label>
-                <div className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-emerald-400 font-mono text-sm font-semibold">
-                  API 35 (Android 15)
+                <div className="px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-emerald-400 font-mono text-xs sm:text-sm font-semibold flex items-center justify-between">
+                  <span>API 35 (Android 15)</span>
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Min SDK</label>
-                <div className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-slate-300 font-mono text-sm">
-                  API 24 (Android 7+)
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Min SDK (Versi Minimum)
+                </label>
+                <select
+                  value={config.minSdk}
+                  onChange={(e) => onChangeConfig({ minSdk: parseInt(e.target.value) || 29 })}
+                  className="w-full px-3 py-2 bg-slate-950 border border-emerald-500/50 rounded-xl text-emerald-300 font-mono text-xs sm:text-sm focus:outline-none focus:border-emerald-400 cursor-pointer"
+                >
+                  <option value={29}>API 29 (Android 10.0+) [Target Utama]</option>
+                  <option value={30}>API 30 (Android 11.0+)</option>
+                  <option value={31}>API 31 (Android 12.0+)</option>
+                  <option value={33}>API 33 (Android 13.0+)</option>
+                  <option value={26}>API 26 (Android 8.0+ Oreo)</option>
+                  <option value={24}>API 24 (Android 7.0+ Nougat)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Android 10+ Target & Device Compatibility Banner */}
+            <div className="p-3.5 rounded-xl bg-gradient-to-r from-emerald-500/10 via-blue-500/5 to-slate-950 border border-emerald-500/30 flex items-start gap-3">
+              <div className="p-2 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0 mt-0.5">
+                <Smartphone className="w-4 h-4" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-white">Target Android 10 Ke Atas Aktif</span>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-semibold border border-emerald-500/30">
+                    API {config.minSdk} s/d API 35 (Android 15)
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-[10px] font-medium border border-blue-500/30">
+                    ~96% Perangkat Aktif
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  Aplikasi web Anda dikonfigurasi agar dapat diinstal dan berjalan lancar di smartphone bersistem <strong>Android 10 (Q)</strong>, <strong>Android 11</strong>, <strong>Android 12</strong>, <strong>Android 13</strong>, <strong>Android 14</strong>, hingga <strong>Android 15</strong> versi terbaru Google Play Store.
+                </p>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-0.5 text-[10px] text-slate-400">
+                  <span className="flex items-center gap-1">✓ Kompatibilitas Legacy & Scoped Storage</span>
+                  <span className="flex items-center gap-1">✓ Gesture Navigasi Android 10+</span>
+                  <span className="flex items-center gap-1">✓ Dark Theme & Web Hardware Acceleration</span>
+                  <span className="flex items-center gap-1">✓ Keamanan Jaringan & Push Notifikasi</span>
                 </div>
               </div>
             </div>

@@ -48,7 +48,7 @@ const PLAY_STEPS: GuideStep[] = [
       'Di bilah menu kiri Play Console, buka menu Rilis (Release) > Produksi (Production) atau Pengujian Tertutup (Closed testing).',
       'Klik tombol "Buat rilis baru" (Create new release).',
       'Pada bagian Google Play App Signing, gunakan opsi default (Google mengelola kunci penandatanganan).',
-      'Tarik dan letakkan berkas app-release.aab yang Anda unduh dari Web2App Studio.',
+      'Tarik dan letakkan berkas app-release.aab yang Anda unduh dari Web2App Studio (otomatis mendukung perangkat Android 10 ke atas hingga Android 15 dengan Target SDK 35).',
       'Beri Nama Rilis (contoh: 1.0.0) dan tulis Catatan Rilis (Release notes) untuk pengguna.',
       'Klik tombol "Simpan" lalu "Tinjau Rilis".'
     ]

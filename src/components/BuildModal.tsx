@@ -28,7 +28,7 @@ interface BuildModalProps {
 }
 
 const BUILD_STEPS: { id: string; name: string; description: string }[] = [
-  { id: '1', name: 'Validasi URL & Konfigurasi Target', description: 'Memeriksa keamanan protokol HTTPS dan integrasi domain' },
+  { id: '1', name: 'Validasi URL & Kompatibilitas Android 10-15', description: 'Memeriksa keamanan HTTPS, Min SDK (Android 10+), dan Target SDK 35' },
   { id: '2', name: 'Menyusun AndroidManifest.xml & FCM Push Service', description: 'Mengonfigurasi izin POST_NOTIFICATIONS, Firebase Messaging, dan deep links' },
   { id: '3', name: 'Mengompilasi Modul Kotlin & ChromeClient', description: 'Membangun WebAppInterface, file uploader kamera, dan layout' },
   { id: '4', name: 'Kriptografi Tanda Tangan Rilis (Keystore)', description: 'Menghasilkan sertifikat SHA-256 Google Play App Signing' },
@@ -230,9 +230,9 @@ export const BuildModal: React.FC<BuildModalProps> = ({
               <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-start gap-3">
                 <ShieldCheck className="w-6 h-6 text-emerald-400 shrink-0 mt-0.5" />
                 <div>
-                  <h4 className="text-sm font-bold text-white">Siap untuk Google Play Store</h4>
+                  <h4 className="text-sm font-bold text-white">Siap untuk Google Play Store (Android 10 s/d 15)</h4>
                   <p className="text-xs text-slate-300 mt-0.5">
-                    File <strong>.AAB</strong> telah dikemas dengan Target SDK 35 dan ditandatangani dengan Release Keystore. Anda bisa langsung mengunggahnya ke Google Play Console!
+                    Berkas <strong>.AAB</strong> telah dikemas untuk <strong>Android 10 ke atas (API {config.minSdk} s/d API 35)</strong> dan ditandatangani dengan Release Keystore SHA-256. Siap diunggah ke Google Play Console!
                   </p>
                 </div>
               </div>

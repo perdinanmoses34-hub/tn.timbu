@@ -123,7 +123,11 @@ export default function App() {
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                  <span className="px-2.5 py-1 rounded-full bg-blue-500/15 text-blue-400 text-xs font-semibold border border-blue-500/30 flex items-center gap-1">
+                    <Smartphone className="w-3.5 h-3.5" />
+                    Android 10+ (API {config.minSdk}-35)
+                  </span>
                   <span className="px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400 text-xs font-semibold border border-emerald-500/30 flex items-center gap-1">
                     <ShieldCheck className="w-3.5 h-3.5" />
                     Target SDK 35
@@ -207,6 +211,14 @@ export default function App() {
                     Target API Level
                   </span>
                   <span className="font-mono text-[11px] text-emerald-400 font-semibold">API 35 (Android 15)</span>
+                </div>
+
+                <div className="flex items-center justify-between p-2 rounded-lg bg-slate-950/60 border border-slate-800">
+                  <span className="flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    Kompatibilitas Ponsel
+                  </span>
+                  <span className="font-mono text-[11px] text-emerald-400 font-semibold">Android 10+ (API {config.minSdk}-35)</span>
                 </div>
 
                 <div className="flex items-center justify-between p-2 rounded-lg bg-slate-950/60 border border-slate-800">

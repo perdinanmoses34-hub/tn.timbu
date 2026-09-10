@@ -471,7 +471,7 @@ export const DeviceSimulator: React.FC<DeviceSimulatorProps> = ({
       {/* Simulator Info Caption */}
       <div className="mt-3 text-center">
         <p className="text-[11px] text-slate-400">
-          Target: <strong className="text-slate-200">Android 15 (API 35)</strong> • FCM: <strong className="text-amber-400">Aktif</strong>
+          Target: <strong className="text-slate-200">Android 10 s/d 15 (API {config.minSdk}-35)</strong> • FCM: <strong className="text-amber-400">Aktif</strong>
         </p>
       </div>
     </div>
