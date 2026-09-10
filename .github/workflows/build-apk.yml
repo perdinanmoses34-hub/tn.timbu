@@ -61,7 +61,7 @@ jobs:
             RAW_PKG_NAME="com.web2app.app"
           fi
 
-          # Sanitize package name (only letters, numbers, dots, underscores)
+          # Sanitize package name (letters, digits, underscores, dots)
           PKG_NAME=$(echo "$RAW_PKG_NAME" | tr -d ' ' | tr -cd '[:alnum:]._')
           if [[ "$PKG_NAME" != *.* ]]; then
             PKG_NAME="com.web2app.$PKG_NAME"
@@ -75,10 +75,10 @@ jobs:
 
           # Sanitize App Name for XML
           APP_NAME="$RAW_APP_NAME"
-          SAFE_APP_NAME=$(echo "$APP_NAME" | sed "s/'/\\\\'/g" | sed 's/&/\&amp;/g' | sed 's/</\&lt;/g' | sed 's/>/\&gt;/g')
+          SAFE_APP_NAME=$(echo "$APP_NAME" | sed "s/'/\\'/g" | sed 's/&/\&amp;/g' | sed 's/</\&lt;/g' | sed 's/>/\&gt;/g')
           SAFE_TARGET_URL=$(echo "$TARGET_URL" | sed 's/&/\&amp;/g')
 
-          # Calculate package directory path (e.g. com/web2app/app)
+          # Calculate package directory path
           PKG_DIR=$(echo "$PKG_NAME" | tr '.' '/')
 
           # Create directory structure
