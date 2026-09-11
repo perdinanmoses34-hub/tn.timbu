@@ -6,7 +6,7 @@ on:
       target_url:
         description: 'URL Website untuk dijadikan aplikasi Android'
         required: true
-        default: 'https://tntimbu.github.io/jesuskingdomchrist/'
+        default: 'https://tokoonline-store.com'
       app_name:
         description: 'Nama Aplikasi Android'
         required: true
