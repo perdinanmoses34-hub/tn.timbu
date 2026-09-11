@@ -6,7 +6,7 @@ on:
       target_url:
         description: 'URL Website untuk dijadikan aplikasi Android'
         required: true
-        default: 'https://perdinanmoses34-hub.github.io/tn.timbu/'
+        default: 'https://tokoonline-store.com'
       app_name:
         description: 'Nama Aplikasi Android'
         required: true
@@ -52,7 +52,7 @@ jobs:
           RAW_PKG_NAME="${{ github.event.inputs.package_name }}"
 
           if [ -z "$RAW_TARGET_URL" ]; then
-            RAW_TARGET_URL="https://perdinanmoses34-hub.github.io/tn.timbu/"
+            RAW_TARGET_URL="https://tokoonline-store.com"
           fi
           if [ -z "$RAW_APP_NAME" ]; then
             RAW_APP_NAME="Web2App"
@@ -165,6 +165,7 @@ jobs:
               implementation("com.google.android.material:material:1.12.0")
               implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
               implementation("androidx.webkit:webkit:1.11.0")
+              implementation("androidx.activity:activity-ktx:1.9.2")
           }
           EOF
 
@@ -176,6 +177,7 @@ jobs:
           <resources>
               <string name="app_name">$SAFE_APP_NAME</string>
               <string name="target_url">$SAFE_TARGET_URL</string>
+              <bool name="pull_to_refresh_enabled">true</bool>
           </resources>
           EOF
 
@@ -183,6 +185,8 @@ jobs:
           <resources>
               <color name="primary">#2563EB</color>
               <color name="status_bar">#1D4ED8</color>
+              <color name="nav_bar">#0F172A</color>
+              <color name="splash_bg">#0F172A</color>
           </resources>
           EOF
 
@@ -191,59 +195,103 @@ jobs:
               <style name="Theme.Web2App" parent="Theme.AppCompat.Light.NoActionBar">
                   <item name="colorPrimary">@color/primary</item>
                   <item name="colorPrimaryDark">@color/status_bar</item>
+                  <item name="android:statusBarColor">@color/status_bar</item>
+                  <item name="android:navigationBarColor">@color/nav_bar</item>
               </style>
           </resources>
           EOF
 
-          # 6. App Icon (Vector Drawable)
+          
+          # Fallback Vector Icon
+          mkdir -p android/app/src/main/res/drawable
           cat << 'EOF' > android/app/src/main/res/drawable/ic_launcher.xml
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
               android:width="108dp"
               android:height="108dp"
               android:viewportWidth="108"
               android:viewportHeight="108">
-              <path
-                  android:fillColor="#2563EB"
-                  android:pathData="M0,0h108v108h-108z"/>
-              <path
-                  android:fillColor="#FFFFFF"
-                  android:pathData="M35,24h38c6.075,0 11,4.925 11,11v38c0,6.075 -4.925,11 -11,11h-38c-6.075,0 -11,-4.925 -11,-11v-38c0,-6.075 4.925,-11 11,-11z"/>
-              <path
-                  android:fillColor="#2563EB"
-                  android:pathData="M42,32h24c3.314,0 6,2.686 6,6v32c0,3.314 -2.686,6 -6,6h-24c-3.314,0 -6,-2.686 -6,-6v-32c0,-3.314 2.686,-6 6,-6z"/>
-              <path
-                  android:fillColor="#FFFFFF"
-                  android:pathData="M51,70h6c1.105,0 2,0.895 2,2c0,1.105 -0.895,2 -2,2h-6c-1.105,0 -2,-0.895 -2,-2c0,-1.105 0.895,-2 2,-2z"/>
+              <path android:fillColor="#2563EB" android:pathData="M0,0h108v108h-108z"/>
+              <path android:fillColor="#FFFFFF" android:pathData="M35,24h38c6.075,0 11,4.925 11,11v38c0,6.075 -4.925,11 -11,11h-38c-6.075,0 -11,-4.925 -11,-11v-38c0,-6.075 4.925,-11 11,-11z"/>
+              <path android:fillColor="#2563EB" android:pathData="M42,32h24c3.314,0 6,2.686 6,6v32c0,3.314 -2.686,6 -6,6h-24c-3.314,0 -6,-2.686 -6,-6v-32c0,-3.314 2.686,-6 6,-6z"/>
           </vector>
           EOF
+          mkdir -p android/app/src/main/res/mipmap-xxxhdpi
+          cp android/app/src/main/res/drawable/ic_launcher.xml android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.xml
+          cp android/app/src/main/res/drawable/ic_launcher.xml android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.xml
+
 
           # 7. Layout activity_main.xml
           cat << 'EOF' > android/app/src/main/res/layout/activity_main.xml
           <?xml version="1.0" encoding="utf-8"?>
-          <androidx.swiperefreshlayout.widget.SwipeRefreshLayout 
-              xmlns:android="http://schemas.android.com/apk/res/android"
-              android:id="@+id/swipeRefresh"
+          <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
               android:layout_width="match_parent"
               android:layout_height="match_parent">
 
-              <FrameLayout
+              <androidx.swiperefreshlayout.widget.SwipeRefreshLayout 
+                  android:id="@+id/swipeRefresh"
                   android:layout_width="match_parent"
                   android:layout_height="match_parent">
 
-                  <WebView
-                      android:id="@+id/webView"
+                  <FrameLayout
                       android:layout_width="match_parent"
-                      android:layout_height="match_parent" />
+                      android:layout_height="match_parent">
+
+                      <WebView
+                          android:id="@+id/webView"
+                          android:layout_width="match_parent"
+                          android:layout_height="match_parent" />
+
+                      <ProgressBar
+                          android:id="@+id/progressBar"
+                          style="?android:attr/progressBarStyleHorizontal"
+                          android:layout_width="match_parent"
+                          android:layout_height="4dp"
+                          android:indeterminate="false"
+                          android:max="100" />
+                  </FrameLayout>
+              </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+              
+              <!-- Native Splash Screen Overlay -->
+              <LinearLayout
+                  android:id="@+id/splashOverlay"
+                  android:layout_width="match_parent"
+                  android:layout_height="match_parent"
+                  android:orientation="vertical"
+                  android:gravity="center"
+                  android:background="@color/splash_bg"
+                  android:padding="24dp">
+
+                  <ImageView
+                      android:id="@+id/splashIcon"
+                      android:layout_width="96dp"
+                      android:layout_height="96dp"
+                      android:src="@mipmap/ic_launcher"
+                      android:contentDescription="@string/app_name" />
+
+                  <TextView
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:layout_marginTop="16dp"
+                      android:text="@string/app_name"
+                      android:textColor="#FFFFFF"
+                      android:textSize="20sp"
+                      android:textStyle="bold" />
+
+                  <TextView
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:layout_marginTop="8dp"
+                      android:text="Aplikasi Resmi Android"
+                      android:textColor="#94A3B8"
+                      android:textSize="14sp" />
 
                   <ProgressBar
-                      android:id="@+id/progressBar"
-                      style="?android:attr/progressBarStyleHorizontal"
-                      android:layout_width="match_parent"
-                      android:layout_height="4dp"
-                      android:indeterminate="false"
-                      android:max="100" />
-              </FrameLayout>
-          </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+                      android:layout_width="32dp"
+                      android:layout_height="32dp"
+                      android:layout_marginTop="32dp"
+                      android:indeterminate="true" />
+              </LinearLayout>
+          </FrameLayout>
           EOF
 
           # 8. AndroidManifest.xml
@@ -251,18 +299,24 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.INTERNET" />
-              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
               <application
                   android:allowBackup="true"
-                  android:icon="@drawable/ic_launcher"
-                  android:roundIcon="@drawable/ic_launcher"
+                  android:icon="@mipmap/ic_launcher"
+                  android:roundIcon="@mipmap/ic_launcher_round"
                   android:label="@string/app_name"
                   android:theme="@style/Theme.Web2App"
                   android:usesCleartextTraffic="true">
                   <activity
                       android:name=".MainActivity"
                       android:exported="true"
+                      android:screenOrientation="portrait"
                       android:configChanges="orientation|screenSize|keyboardHidden">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
@@ -273,19 +327,24 @@ jobs:
           </manifest>
           EOF
 
-          # 9. MainActivity.kt
+          # 9. MainActivity.kt with File Chooser (Camera/Gallery) and Back Handler
           cat << EOF > "android/app/src/main/java/$PKG_DIR/MainActivity.kt"
           package $PKG_NAME
 
           import android.annotation.SuppressLint
+          import android.content.Intent
           import android.graphics.Bitmap
+          import android.net.Uri
           import android.os.Bundle
           import android.view.View
+          import android.webkit.GeolocationPermissions
+          import android.webkit.ValueCallback
           import android.webkit.WebChromeClient
           import android.webkit.WebView
           import android.webkit.WebViewClient
           import android.widget.ProgressBar
           import androidx.activity.OnBackPressedCallback
+          import androidx.activity.result.contract.ActivityResultContracts
           import androidx.appcompat.app.AppCompatActivity
           import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 
@@ -293,11 +352,37 @@ jobs:
               private lateinit var webView: WebView
               private lateinit var swipeRefresh: SwipeRefreshLayout
               private lateinit var progressBar: ProgressBar
+              private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
+
+              private val fileChooserLauncher = registerForActivityResult(
+                  ActivityResultContracts.StartActivityForResult()
+              ) { result ->
+                  if (result.resultCode == RESULT_OK) {
+                      val data = result.data
+                      val results: Array<Uri>? = when {
+                          data?.dataString != null -> arrayOf(Uri.parse(data.dataString))
+                          data?.clipData != null -> {
+                              val count = data.clipData!!.itemCount
+                              Array(count) { i -> data.clipData!!.getItemAt(i).uri }
+                          }
+                          else -> null
+                      }
+                      fileUploadCallback?.onReceiveValue(results)
+                  } else {
+                      fileUploadCallback?.onReceiveValue(null)
+                  }
+                  fileUploadCallback = null
+              }
 
               @SuppressLint("SetJavaScriptEnabled")
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
                   setContentView(R.layout.activity_main)
+
+                  try {
+                      window.statusBarColor = android.graphics.Color.parseColor("#1D4ED8")
+                      window.navigationBarColor = android.graphics.Color.parseColor("#0F172A")
+                  } catch (e: Exception) {}
 
                   webView = findViewById(R.id.webView)
                   swipeRefresh = findViewById(R.id.swipeRefresh)
@@ -307,6 +392,8 @@ jobs:
                       javaScriptEnabled = true
                       domStorageEnabled = true
                       databaseEnabled = true
+                      allowFileAccess = true
+                      allowContentAccess = true
                       useWideViewPort = true
                       loadWithOverviewMode = true
                       setSupportZoom(true)
@@ -329,10 +416,42 @@ jobs:
                           progressBar.progress = newProgress
                           if (newProgress >= 100) progressBar.visibility = View.GONE
                       }
+
+                      override fun onShowFileChooser(
+                          webView: WebView?,
+                          filePathCallback: ValueCallback<Array<Uri>>?,
+                          fileChooserParams: FileChooserParams?
+                      ): Boolean {
+                          fileUploadCallback?.onReceiveValue(null)
+                          fileUploadCallback = filePathCallback
+
+                          val intent = fileChooserParams?.createIntent() ?: Intent(Intent.ACTION_GET_CONTENT).apply {
+                              type = "*/*"
+                              addCategory(Intent.CATEGORY_OPENABLE)
+                          }
+                          try {
+                              fileChooserLauncher.launch(intent)
+                          } catch (e: Exception) {
+                              fileUploadCallback = null
+                              return false
+                          }
+                          return true
+                      }
+
+                      override fun onGeolocationPermissionsShowPrompt(
+                          origin: String?,
+                          callback: GeolocationPermissions.Callback?
+                      ) {
+                          callback?.invoke(origin, true, false)
+                      }
                   }
 
-                  swipeRefresh.setOnRefreshListener {
-                      webView.reload()
+                  val pullRefreshEnabled = resources.getBoolean(R.bool.pull_to_refresh_enabled)
+                  swipeRefresh.isEnabled = pullRefreshEnabled
+                  if (pullRefreshEnabled) {
+                      swipeRefresh.setOnRefreshListener {
+                          webView.reload()
+                      }
                   }
 
                   onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -344,6 +463,16 @@ jobs:
                           }
                       }
                   })
+
+                  
+                  val splashOverlay = findViewById<View>(R.id.splashOverlay)
+                  android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                      splashOverlay?.animate()
+                          ?.alpha(0f)
+                          ?.setDuration(400)
+                          ?.withEndAction { splashOverlay.visibility = View.GONE }
+                  }, 2000L)
+  
 
                   val url = getString(R.string.target_url)
                   webView.loadUrl(url)
