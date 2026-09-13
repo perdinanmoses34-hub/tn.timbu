@@ -63,13 +63,15 @@ export async function getRepoInfo(
   if (!config.owner || !config.repo) {
     return { error: 'Nama pemilik atau repositori belum diisi.' };
   }
-  const url = `https://api.github.com/repos/${config.owner.trim()}/${config.repo.trim()}`;
+  const url = `https://api.github.com/repos/${config.owner.trim()}/${config.repo.trim()}?_ts=${Date.now()}`;
   try {
     const res = await fetch(url, {
+      cache: 'no-store',
       headers: {
         Accept: 'application/vnd.github+json',
         ...(config.token ? { Authorization: `Bearer ${config.token.trim()}` } : {}),
         'X-GitHub-Api-Version': '2022-11-28',
+        'Cache-Control': 'no-cache',
       },
     });
     if (res.ok) {
@@ -124,6 +126,65 @@ export function parseWorkflowInputsFromYaml(yamlText: string): string[] {
 }
 
 /**
+ * Authoritatively retrieves the latest SHA and content of a file in the repository,
+ * bypassing all browser and edge caches. Uses both Contents API and Git Trees API fallback.
+ */
+export async function fetchAuthoritativeFileSha(
+  config: GitHubConfig,
+  branch: string,
+  filePath: string
+): Promise<{ sha?: string; content?: string; exists: boolean }> {
+  const token = config.token.trim();
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    Pragma: 'no-cache',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+
+  const ts = Date.now();
+
+  // 1. Direct Contents API with cache-buster timestamp
+  try {
+    const url = `https://api.github.com/repos/${config.owner.trim()}/${config.repo.trim()}/contents/${filePath}?ref=${encodeURIComponent(branch)}&_ts=${ts}`;
+    const res = await fetch(url, {
+      cache: 'no-store',
+      headers,
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return { sha: data.sha, content: data.content, exists: true };
+    }
+    if (res.status === 404) {
+      return { exists: false };
+    }
+  } catch (e) {
+    console.warn('Gagal mengambil SHA lewat contents API:', e);
+  }
+
+  // 2. Direct Git Tree API lookup (checks authoritative Git object database for branch HEAD)
+  try {
+    const treeUrl = `https://api.github.com/repos/${config.owner.trim()}/${config.repo.trim()}/git/trees/${encodeURIComponent(branch)}?recursive=1&_ts=${ts}`;
+    const treeRes = await fetch(treeUrl, {
+      cache: 'no-store',
+      headers,
+    });
+    if (treeRes.ok) {
+      const treeData = await treeRes.json();
+      const match = (treeData.tree || []).find((item: any) => item.path === filePath);
+      if (match && match.sha) {
+        return { sha: match.sha, exists: true };
+      }
+    }
+  } catch (e) {
+    console.warn('Gagal mengambil SHA lewat git trees API:', e);
+  }
+
+  return { exists: false };
+}
+
+/**
  * Checks if the workflow file exists in the repository on a specific branch and retrieves its content.
  */
 export async function getWorkflowFileFromRepo(
@@ -131,30 +192,12 @@ export async function getWorkflowFileFromRepo(
   branch: string
 ): Promise<{ exists: boolean; content?: string; sha?: string; error?: string }> {
   const path = '.github/workflows/build-apk.yml';
-  const url = `https://api.github.com/repos/${config.owner.trim()}/${config.repo.trim()}/contents/${path}?ref=${branch}`;
-
-  try {
-    const res = await fetch(url, {
-      headers: {
-        Accept: 'application/vnd.github+json',
-        ...(config.token ? { Authorization: `Bearer ${config.token.trim()}` } : {}),
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      const content = data.content ? decodeBase64Utf8(data.content) : '';
-      return { exists: true, content, sha: data.sha };
-    }
-    if (res.status === 404) {
-      return { exists: false };
-    }
-    const errData = await res.json().catch(() => ({}));
-    return { exists: false, error: errData.message || `HTTP ${res.status}` };
-  } catch (err: any) {
-    return { exists: false, error: err?.message || 'Gagal menghubungi GitHub' };
+  const fileInfo = await fetchAuthoritativeFileSha(config, branch, path);
+  if (fileInfo.exists) {
+    const content = fileInfo.content ? decodeBase64Utf8(fileInfo.content) : '';
+    return { exists: true, content, sha: fileInfo.sha };
   }
+  return { exists: false };
 }
 
 /**
@@ -163,14 +206,16 @@ export async function getWorkflowFileFromRepo(
 export async function checkWorkflowRegistration(
   config: GitHubConfig
 ): Promise<{ registered: boolean; id?: number; state?: string; name?: string; error?: string }> {
-  const url = `https://api.github.com/repos/${config.owner.trim()}/${config.repo.trim()}/actions/workflows/build-apk.yml`;
+  const url = `https://api.github.com/repos/${config.owner.trim()}/${config.repo.trim()}/actions/workflows/build-apk.yml?_ts=${Date.now()}`;
 
   try {
     const res = await fetch(url, {
+      cache: 'no-store',
       headers: {
         Accept: 'application/vnd.github+json',
         ...(config.token ? { Authorization: `Bearer ${config.token.trim()}` } : {}),
         'X-GitHub-Api-Version': '2022-11-28',
+        'Cache-Control': 'no-cache',
       },
     });
 
@@ -186,6 +231,7 @@ export async function checkWorkflowRegistration(
 
 /**
  * Synchronizes the latest build-apk.yml workflow directly to the user's GitHub repository.
+ * Features automatic branch detection, content comparison, and 409 SHA conflict self-healing.
  */
 export async function syncWorkflowFileToRepo(
   config: GitHubConfig,
@@ -195,80 +241,132 @@ export async function syncWorkflowFileToRepo(
     return { success: false, message: 'Token GitHub belum diisi. Masukkan Personal Access Token Anda.' };
   }
 
-  // Auto-detect default branch if not specified
+  // 1. Auto-detect default branch if not specified or align main/master
   let targetBranch = config.branch?.trim() || '';
+  const repoInfo = await getRepoInfo(config);
   if (!targetBranch) {
-    const info = await getRepoInfo(config);
-    targetBranch = info.defaultBranch || 'main';
+    targetBranch = repoInfo.defaultBranch || 'main';
+  } else if (repoInfo.defaultBranch && (targetBranch === 'main' || targetBranch === 'master')) {
+    targetBranch = repoInfo.defaultBranch;
   }
 
   const path = '.github/workflows/build-apk.yml';
-  const getUrl = `https://api.github.com/repos/${config.owner.trim()}/${config.repo.trim()}/contents/${path}?ref=${targetBranch}`;
+  const workflowContentToSync = customWorkflowYml || LATEST_WORKFLOW_YML;
 
-  let existingSha: string | undefined;
+  // Base64 encode UTF-8 string safely
+  const utf8Bytes = new TextEncoder().encode(workflowContentToSync);
+  let binary = '';
+  for (let i = 0; i < utf8Bytes.length; i++) {
+    binary += String.fromCharCode(utf8Bytes[i]);
+  }
+  const base64Content = btoa(binary);
 
   try {
-    const getRes = await fetch(getUrl, {
-      headers: {
-        Accept: 'application/vnd.github+json',
-        Authorization: `Bearer ${config.token.trim()}`,
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-    });
+    // 2. Fetch authoritative fresh SHA and existing content
+    let fileInfo = await fetchAuthoritativeFileSha(config, targetBranch, path);
 
-    if (getRes.ok) {
-      const data = await getRes.json();
-      existingSha = data.sha;
-    } else if (getRes.status === 401) {
-      return { success: false, message: 'Token GitHub tidak valid atau telah kedaluwarsa.' };
+    // Fallback: if not found on targetBranch and targetBranch was 'main', check 'master'
+    if (!fileInfo.exists && targetBranch === 'main') {
+      const masterInfo = await fetchAuthoritativeFileSha(config, 'master', path);
+      if (masterInfo.exists) {
+        targetBranch = 'master';
+        fileInfo = masterInfo;
+      }
     }
 
-    const workflowContentToSync = customWorkflowYml || LATEST_WORKFLOW_YML;
+    // 3. If file already exists and content is already identical, skip commit!
+    if (fileInfo.exists && fileInfo.content) {
+      const existingClean = fileInfo.content.replace(/\s/g, '');
+      const newClean = base64Content.replace(/\s/g, '');
+      if (existingClean === newClean) {
+        return {
+          success: true,
+          message: `Alur kerja build-apk.yml di branch "${targetBranch}" sudah mutakhir di GitHub!`,
+          branchUsed: targetBranch,
+        };
+      }
+    }
 
+    // 4. PUT file with automatic retry loop on 409 Conflict / SHA mismatch
     const putUrl = `https://api.github.com/repos/${config.owner.trim()}/${config.repo.trim()}/contents/${path}`;
-    // Base64 encode UTF-8 string safely
-    const utf8Bytes = new TextEncoder().encode(workflowContentToSync);
-    let binary = '';
-    for (let i = 0; i < utf8Bytes.length; i++) {
-      binary += String.fromCharCode(utf8Bytes[i]);
-    }
-    const base64Content = btoa(binary);
+    let currentSha = fileInfo.sha;
+    const maxRetries = 3;
 
-    const putRes = await fetch(putUrl, {
-      method: 'PUT',
-      headers: {
-        Accept: 'application/vnd.github+json',
-        Authorization: `Bearer ${config.token.trim()}`,
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-      body: JSON.stringify({
-        message: 'ci: configure build-apk.yml with workflow_dispatch and Android compiler',
-        content: base64Content,
-        branch: targetBranch,
-        ...(existingSha ? { sha: existingSha } : {}),
-      }),
-    });
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const putRes = await fetch(putUrl, {
+        method: 'PUT',
+        cache: 'no-store',
+        headers: {
+          Accept: 'application/vnd.github+json',
+          Authorization: `Bearer ${config.token.trim()}`,
+          'X-GitHub-Api-Version': '2022-11-28',
+          'Cache-Control': 'no-cache',
+        },
+        body: JSON.stringify({
+          message: 'ci: configure build-apk.yml with workflow_dispatch and Android compiler',
+          content: base64Content,
+          branch: targetBranch,
+          ...(currentSha ? { sha: currentSha } : {}),
+        }),
+      });
 
-    if (putRes.ok) {
-      return {
-        success: true,
-        message: `Alur kerja build-apk.yml berhasil disimpan ke branch "${targetBranch}" di GitHub!`,
-        branchUsed: targetBranch,
-      };
-    }
+      if (putRes.ok) {
+        return {
+          success: true,
+          message: `Alur kerja build-apk.yml berhasil disimpan ke branch "${targetBranch}" di GitHub!`,
+          branchUsed: targetBranch,
+        };
+      }
 
-    const errData = await putRes.json().catch(() => ({}));
-    if (putRes.status === 403 || putRes.status === 404) {
+      if (putRes.status === 401) {
+        return { success: false, message: 'Token GitHub tidak valid atau telah kedaluwarsa.' };
+      }
+
+      const errData = await putRes.json().catch(() => ({}));
+      const rawMessage: string = errData.message || '';
+
+      if (putRes.status === 403) {
+        return {
+          success: false,
+          message:
+            'Token GitHub Anda belum memiliki izin "workflow" (wajib dicentang saat membuat token di GitHub agar bisa mengelola alur kerja Action). Silakan buat token baru dengan izin "repo" dan "workflow".',
+        };
+      }
+
+      // Check if error is due to SHA mismatch (409 Conflict or "does not match")
+      const isShaConflict =
+        putRes.status === 409 ||
+        rawMessage.toLowerCase().includes('does not match') ||
+        rawMessage.toLowerCase().includes('conflict');
+
+      if (isShaConflict && attempt < maxRetries) {
+        // Wait briefly for GitHub git propagation
+        await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+
+        // Refetch latest fresh SHA strictly
+        const refreshed = await fetchAuthoritativeFileSha(config, targetBranch, path);
+        if (refreshed.sha && refreshed.sha !== currentSha) {
+          currentSha = refreshed.sha;
+          continue; // Retry PUT with the fresh SHA!
+        }
+      }
+
+      if (isShaConflict) {
+        return {
+          success: false,
+          message: `Konflik versi berkas teratasi: berkas di GitHub telah diperbarui. Silakan klik tombol "Mulai Kompilasi APK" kembali atau gunakan Mode 2 (Salin Manual).`,
+        };
+      }
+
       return {
         success: false,
-        message:
-          'Token GitHub Anda belum memiliki izin "workflow" (wajib dicentang saat membuat token di GitHub agar bisa mengelola alur kerja Action). Silakan buat token baru dengan izin "repo" dan "workflow".',
+        message: rawMessage || `Gagal menyinkronkan berkas ke GitHub (HTTP ${putRes.status})`,
       };
     }
 
     return {
       success: false,
-      message: errData.message || `Gagal menyinkronkan berkas ke GitHub (HTTP ${putRes.status})`,
+      message: 'Gagal menyinkronkan alur kerja karena konflik versi berkas di GitHub.',
     };
   } catch (err: any) {
     return {
@@ -317,10 +415,13 @@ export async function triggerCloudBuild(
   // 1. Detect repository default branch
   const repoInfo = await getRepoInfo(config);
   let targetBranch = config.branch?.trim() || repoInfo.defaultBranch || 'main';
+  if (repoInfo.defaultBranch && (targetBranch === 'main' || targetBranch === 'master')) {
+    targetBranch = repoInfo.defaultBranch;
+  }
 
   // 2. Check if the workflow file exists in repository
   let fileInfo = await getWorkflowFileFromRepo(config, targetBranch);
-  if (!fileInfo.exists && targetBranch !== 'master' && (!config.branch || config.branch === 'main')) {
+  if (!fileInfo.exists && targetBranch !== 'master') {
     // Check if it exists on 'master' branch instead
     const masterInfo = await getWorkflowFileFromRepo(config, 'master');
     if (masterInfo.exists) {
@@ -329,27 +430,36 @@ export async function triggerCloudBuild(
     }
   }
 
-  // 3. Only sync if the file doesn't exist yet OR user explicitly requested force sync
-  if (!fileInfo.exists || forceSyncWorkflow) {
+  // Check if workflow is already registered on GitHub Actions
+  const regInfo = await checkWorkflowRegistration(config);
+
+  // 3. Only sync if the file doesn't exist and isn't registered, OR user explicitly requested force sync
+  const needsSync = forceSyncWorkflow || (!fileInfo.exists && !regInfo.registered);
+  if (needsSync) {
     const syncRes = await syncWorkflowFileToRepo({ ...config, branch: targetBranch }, customWorkflowYml);
     if (!syncRes.success) {
-      return {
-        success: false,
-        error: `Gagal menyiapkan alur kerja di GitHub: ${syncRes.message}`,
-      };
-    }
-    if (syncRes.branchUsed) {
+      // If workflow was already registered in Actions, we don't necessarily have to block dispatch
+      if (!regInfo.registered) {
+        return {
+          success: false,
+          error: `Gagal menyiapkan alur kerja di GitHub: ${syncRes.message}`,
+        };
+      }
+    } else if (syncRes.branchUsed) {
       targetBranch = syncRes.branchUsed;
     }
-    // Give GitHub Actions 2.5 seconds to register the newly committed workflow
-    await new Promise((r) => setTimeout(r, 2500));
-    fileInfo = await getWorkflowFileFromRepo(config, targetBranch);
+    // Give GitHub Actions a moment to register newly committed workflow if synced
+    if (!fileInfo.content && customWorkflowYml) {
+      fileInfo = { exists: true, content: customWorkflowYml };
+    }
   }
 
   // 4. Inspect which inputs are actually declared in the workflow file on GitHub
   let declaredInputs: string[] = [];
   if (fileInfo.content) {
     declaredInputs = parseWorkflowInputsFromYaml(fileInfo.content);
+  } else if (customWorkflowYml) {
+    declaredInputs = parseWorkflowInputsFromYaml(customWorkflowYml);
   }
 
   // Build the dispatch inputs payload based strictly on declared inputs (or safe defaults)
@@ -503,14 +613,16 @@ export async function triggerCloudBuild(
 export async function getLatestWorkflowRun(
   config: GitHubConfig
 ): Promise<{ run?: WorkflowRun; error?: string }> {
-  const url = `https://api.github.com/repos/${config.owner}/${config.repo}/actions/workflows/build-apk.yml/runs?per_page=1`;
+  const url = `https://api.github.com/repos/${config.owner}/${config.repo}/actions/workflows/build-apk.yml/runs?per_page=1&_ts=${Date.now()}`;
 
   try {
     const response = await fetch(url, {
+      cache: 'no-store',
       headers: {
         Accept: 'application/vnd.github+json',
         ...(config.token ? { Authorization: `Bearer ${config.token.trim()}` } : {}),
         'X-GitHub-Api-Version': '2022-11-28',
+        'Cache-Control': 'no-cache',
       },
     });
 
@@ -537,14 +649,16 @@ export async function getRunArtifacts(
   config: GitHubConfig,
   runId: number
 ): Promise<{ artifacts: ArtifactItem[]; error?: string }> {
-  const url = `https://api.github.com/repos/${config.owner}/${config.repo}/actions/runs/${runId}/artifacts`;
+  const url = `https://api.github.com/repos/${config.owner}/${config.repo}/actions/runs/${runId}/artifacts?_ts=${Date.now()}`;
 
   try {
     const response = await fetch(url, {
+      cache: 'no-store',
       headers: {
         Accept: 'application/vnd.github+json',
         ...(config.token ? { Authorization: `Bearer ${config.token.trim()}` } : {}),
         'X-GitHub-Api-Version': '2022-11-28',
+        'Cache-Control': 'no-cache',
       },
     });
 
