@@ -202,14 +202,21 @@ jobs:
           export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
           yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
-      - name: Generate Android Project Sources
+      - name: Configure Android Project & Gradle Build System
+        env:
+          INPUT_TARGET_URL: \${{ github.event.inputs.target_url }}
+          INPUT_APP_NAME: \${{ github.event.inputs.app_name }}
+          INPUT_PKG_NAME: \${{ github.event.inputs.package_name }}
+          INPUT_THEME_COLOR: \${{ github.event.inputs.theme_color }}
+          INPUT_STATUS_BAR_COLOR: \${{ github.event.inputs.status_bar_color }}
+          INPUT_NAV_BAR_COLOR: \${{ github.event.inputs.nav_bar_color }}
         run: |
-          RAW_TARGET_URL="\${{ github.event.inputs.target_url }}"
-          RAW_APP_NAME="\${{ github.event.inputs.app_name }}"
-          RAW_PKG_NAME="\${{ github.event.inputs.package_name }}"
-          RAW_THEME_COLOR="\${{ github.event.inputs.theme_color }}"
-          RAW_STATUS_BAR_COLOR="\${{ github.event.inputs.status_bar_color }}"
-          RAW_NAV_BAR_COLOR="\${{ github.event.inputs.nav_bar_color }}"
+          RAW_TARGET_URL="$INPUT_TARGET_URL"
+          RAW_APP_NAME="$INPUT_APP_NAME"
+          RAW_PKG_NAME="$INPUT_PKG_NAME"
+          RAW_THEME_COLOR="$INPUT_THEME_COLOR"
+          RAW_STATUS_BAR_COLOR="$INPUT_STATUS_BAR_COLOR"
+          RAW_NAV_BAR_COLOR="$INPUT_NAV_BAR_COLOR"
 
           if [ -z "$RAW_TARGET_URL" ]; then
             RAW_TARGET_URL="${safeUrl}"
@@ -249,6 +256,17 @@ jobs:
 
           # Calculate package directory path
           PKG_DIR=$(echo "$PKG_NAME" | tr '.' '/')
+
+          # Export variables to GITHUB_ENV so all later steps have them cleanly
+          echo "PKG_NAME=$PKG_NAME" >> $GITHUB_ENV
+          echo "PKG_DIR=$PKG_DIR" >> $GITHUB_ENV
+          echo "APP_NAME=$APP_NAME" >> $GITHUB_ENV
+          echo "SAFE_APP_NAME=$SAFE_APP_NAME" >> $GITHUB_ENV
+          echo "TARGET_URL=$TARGET_URL" >> $GITHUB_ENV
+          echo "SAFE_TARGET_URL=$SAFE_TARGET_URL" >> $GITHUB_ENV
+          echo "RAW_THEME_COLOR=$RAW_THEME_COLOR" >> $GITHUB_ENV
+          echo "RAW_STATUS_BAR_COLOR=$RAW_STATUS_BAR_COLOR" >> $GITHUB_ENV
+          echo "RAW_NAV_BAR_COLOR=$RAW_NAV_BAR_COLOR" >> $GITHUB_ENV
 
           # Create directory structure
           mkdir -p "android/app/src/main/java/$PKG_DIR"
@@ -358,6 +376,31 @@ jobs:
           # Proguard rules file
           touch android/app/proguard-rules.pro
 
+      - name: Generate App Icons & Signing Keystore
+        run: |
+          mkdir -p android/app/src/main/res/drawable
+          mkdir -p android/app/src/main/res/mipmap-anydpi-v26
+          mkdir -p android/app/src/main/res/mipmap-hdpi
+          mkdir -p android/app/src/main/res/mipmap-mdpi
+          mkdir -p android/app/src/main/res/mipmap-xhdpi
+          mkdir -p android/app/src/main/res/mipmap-xxhdpi
+          mkdir -p android/app/src/main/res/mipmap-xxxhdpi
+
+          ${iconScript}
+
+          # Generate Keystore for signing Release APK and AAB
+          keytool -genkeypair -v \
+            -keystore android/app/release.keystore \
+            -alias "${config.keystore?.alias || 'release-key'}" \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass "${config.keystore?.storePassword || 'Password123!'}" \
+            -keypass "${config.keystore?.keyPassword || 'Password123!'}" \
+            -dname "CN=$SAFE_APP_NAME, O=Web2App, C=ID"
+
+      - name: Generate Android Resources & Manifest
+        run: |
           # 5. Strings and values
           cat << EOF > android/app/src/main/res/values/strings.xml
           <resources>
@@ -386,8 +429,6 @@ jobs:
               </style>
           </resources>
           EOF
-
-          ${iconScript}
 
           # 6. Embedded google-services.json for Firebase Push Notifications
           printf '%s' "${googleServicesJsonBase64}" | base64 -d > android/app/google-services.json
@@ -470,6 +511,9 @@ jobs:
           </manifest>
           EOF
 
+      - name: Generate Firebase Cloud Messaging Service
+        run: |
+          mkdir -p "android/app/src/main/java/$PKG_DIR"
           # 9. MyFirebaseMessagingService.kt
           cat << 'EOF' > "android/app/src/main/java/$PKG_DIR/MyFirebaseMessagingService.kt"
           package $PKG_NAME
@@ -569,6 +613,9 @@ jobs:
           }
           EOF
 
+      - name: Generate Android MainActivity & WebView Controller
+        run: |
+          mkdir -p "android/app/src/main/java/$PKG_DIR"
           # 10. MainActivity.kt with Notifications, File Chooser, Back Handler, and Deep Links
           cat << EOF > "android/app/src/main/java/$PKG_DIR/MainActivity.kt"
           package $PKG_NAME
@@ -890,17 +937,6 @@ jobs:
               }
           }
           EOF
-
-          # Generate Keystore for signing Release APK and AAB
-          keytool -genkeypair -v \
-            -keystore android/app/release.keystore \
-            -alias "${config.keystore?.alias || 'release-key'}" \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storepass "${config.keystore?.storePassword || 'Password123!'}" \
-            -keypass "${config.keystore?.keyPassword || 'Password123!'}" \
-            -dname "CN=$SAFE_APP_NAME, O=Web2App, C=ID"
 
       - name: Build Android Release APK & AAB Bundle
         working-directory: android

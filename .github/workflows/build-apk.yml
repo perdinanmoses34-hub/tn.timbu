@@ -56,14 +56,21 @@ jobs:
           export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
           yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
-      - name: Generate Android Project Sources
+      - name: Configure Android Project & Gradle Build System
+        env:
+          INPUT_TARGET_URL: ${{ github.event.inputs.target_url }}
+          INPUT_APP_NAME: ${{ github.event.inputs.app_name }}
+          INPUT_PKG_NAME: ${{ github.event.inputs.package_name }}
+          INPUT_THEME_COLOR: ${{ github.event.inputs.theme_color }}
+          INPUT_STATUS_BAR_COLOR: ${{ github.event.inputs.status_bar_color }}
+          INPUT_NAV_BAR_COLOR: ${{ github.event.inputs.nav_bar_color }}
         run: |
-          RAW_TARGET_URL="${{ github.event.inputs.target_url }}"
-          RAW_APP_NAME="${{ github.event.inputs.app_name }}"
-          RAW_PKG_NAME="${{ github.event.inputs.package_name }}"
-          RAW_THEME_COLOR="${{ github.event.inputs.theme_color }}"
-          RAW_STATUS_BAR_COLOR="${{ github.event.inputs.status_bar_color }}"
-          RAW_NAV_BAR_COLOR="${{ github.event.inputs.nav_bar_color }}"
+          RAW_TARGET_URL="$INPUT_TARGET_URL"
+          RAW_APP_NAME="$INPUT_APP_NAME"
+          RAW_PKG_NAME="$INPUT_PKG_NAME"
+          RAW_THEME_COLOR="$INPUT_THEME_COLOR"
+          RAW_STATUS_BAR_COLOR="$INPUT_STATUS_BAR_COLOR"
+          RAW_NAV_BAR_COLOR="$INPUT_NAV_BAR_COLOR"
 
           if [ -z "$RAW_TARGET_URL" ]; then
             RAW_TARGET_URL="https://tntimbu.github.io/jesuskingdomchrist/"
@@ -103,6 +110,17 @@ jobs:
 
           # Calculate package directory path
           PKG_DIR=$(echo "$PKG_NAME" | tr '.' '/')
+
+          # Export variables to GITHUB_ENV so all later steps have them cleanly
+          echo "PKG_NAME=$PKG_NAME" >> $GITHUB_ENV
+          echo "PKG_DIR=$PKG_DIR" >> $GITHUB_ENV
+          echo "APP_NAME=$APP_NAME" >> $GITHUB_ENV
+          echo "SAFE_APP_NAME=$SAFE_APP_NAME" >> $GITHUB_ENV
+          echo "TARGET_URL=$TARGET_URL" >> $GITHUB_ENV
+          echo "SAFE_TARGET_URL=$SAFE_TARGET_URL" >> $GITHUB_ENV
+          echo "RAW_THEME_COLOR=$RAW_THEME_COLOR" >> $GITHUB_ENV
+          echo "RAW_STATUS_BAR_COLOR=$RAW_STATUS_BAR_COLOR" >> $GITHUB_ENV
+          echo "RAW_NAV_BAR_COLOR=$RAW_NAV_BAR_COLOR" >> $GITHUB_ENV
 
           # Create directory structure
           mkdir -p "android/app/src/main/java/$PKG_DIR"
@@ -212,34 +230,15 @@ jobs:
           # Proguard rules file
           touch android/app/proguard-rules.pro
 
-          # 5. Strings and values
-          cat << EOF > android/app/src/main/res/values/strings.xml
-          <resources>
-              <string name="app_name">$SAFE_APP_NAME</string>
-              <string name="target_url">$SAFE_TARGET_URL</string>
-              <bool name="pull_to_refresh_enabled">true</bool>
-          </resources>
-          EOF
-
-          cat << EOF > android/app/src/main/res/values/colors.xml
-          <resources>
-              <color name="primary">$RAW_THEME_COLOR</color>
-              <color name="status_bar">$RAW_STATUS_BAR_COLOR</color>
-              <color name="nav_bar">$RAW_NAV_BAR_COLOR</color>
-              <color name="splash_bg">#0F172A</color>
-          </resources>
-          EOF
-
-          cat << 'EOF' > android/app/src/main/res/values/styles.xml
-          <resources>
-              <style name="Theme.Web2App" parent="Theme.AppCompat.Light.NoActionBar">
-                  <item name="colorPrimary">@color/primary</item>
-                  <item name="colorPrimaryDark">@color/status_bar</item>
-                  <item name="android:statusBarColor">@color/status_bar</item>
-                  <item name="android:navigationBarColor">@color/nav_bar</item>
-              </style>
-          </resources>
-          EOF
+      - name: Generate App Icons & Signing Keystore
+        run: |
+          mkdir -p android/app/src/main/res/drawable
+          mkdir -p android/app/src/main/res/mipmap-anydpi-v26
+          mkdir -p android/app/src/main/res/mipmap-hdpi
+          mkdir -p android/app/src/main/res/mipmap-mdpi
+          mkdir -p android/app/src/main/res/mipmap-xhdpi
+          mkdir -p android/app/src/main/res/mipmap-xxhdpi
+          mkdir -p android/app/src/main/res/mipmap-xxxhdpi
 
           
           # Write Custom Icon from Web2App Studio
@@ -264,8 +263,42 @@ jobs:
           cp android/app/src/main/res/drawable/ic_launcher.png android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
 
 
+          # Generate Keystore for signing Release APK and AAB
+          keytool -genkeypair -v             -keystore android/app/release.keystore             -alias "release-key"             -keyalg RSA             -keysize 2048             -validity 10000             -storepass "Password123!"             -keypass "Password123!"             -dname "CN=$SAFE_APP_NAME, O=Web2App, C=ID"
+
+      - name: Generate Android Resources & Manifest
+        run: |
+          # 5. Strings and values
+          cat << EOF > android/app/src/main/res/values/strings.xml
+          <resources>
+              <string name="app_name">$SAFE_APP_NAME</string>
+              <string name="target_url">$SAFE_TARGET_URL</string>
+              <bool name="pull_to_refresh_enabled">true</bool>
+          </resources>
+          EOF
+
+          cat << EOF > android/app/src/main/res/values/colors.xml
+          <resources>
+              <color name="primary">$RAW_THEME_COLOR</color>
+              <color name="status_bar">$RAW_STATUS_BAR_COLOR</color>
+              <color name="nav_bar">$RAW_NAV_BAR_COLOR</color>
+              <color name="splash_bg">#000000</color>
+          </resources>
+          EOF
+
+          cat << 'EOF' > android/app/src/main/res/values/styles.xml
+          <resources>
+              <style name="Theme.Web2App" parent="Theme.AppCompat.Light.NoActionBar">
+                  <item name="colorPrimary">@color/primary</item>
+                  <item name="colorPrimaryDark">@color/status_bar</item>
+                  <item name="android:statusBarColor">@color/status_bar</item>
+                  <item name="android:navigationBarColor">@color/nav_bar</item>
+              </style>
+          </resources>
+          EOF
+
           # 6. Embedded google-services.json for Firebase Push Notifications
-          printf '%s' "ewogICJwcm9qZWN0X2luZm8iOiB7CiAgICAicHJvamVjdF9udW1iZXIiOiAiOTg1MjA5ODg5MTgiLAogICAgInByb2plY3RfaWQiOiAiZ2VuLWxhbmctY2xpZW50LTA2Mjk3ODkwNjkiLAogICAgInN0b3JhZ2VfYnVja2V0IjogImdlbi1sYW5nLWNsaWVudC0wNjI5Nzg5MDY5LmFwcHNwb3QuY29tIgogIH0sCiAgImNsaWVudCI6IFsKICAgIHsKICAgICAgImNsaWVudF9pbmZvIjogewogICAgICAgICJtb2JpbGVzZGtfYXBwX2lkIjogIjE6OTgyMzQ3MTAyOTM4OmFuZHJvaWQ6NzI4MzRiOTJjODFkIiwKICAgICAgICAiYW5kcm9pZF9jbGllbnRfaW5mbyI6IHsKICAgICAgICAgICJwYWNrYWdlX25hbWUiOiAiaW8uZ2l0aHViLmFwcCIKICAgICAgICB9CiAgICAgIH0sCiAgICAgICJvYXV0aF9jbGllbnQiOiBbCiAgICAgICAgewogICAgICAgICAgImNsaWVudF9pZCI6ICI5ODUyMDk4ODkxOC1jbGllbnQuYXBwcy5nb29nbGV1c2VyY29udGVudC5jb20iLAogICAgICAgICAgImNsaWVudF90eXBlIjogMSwKICAgICAgICAgICJhbmRyb2lkX2luZm8iOiB7CiAgICAgICAgICAgICJwYWNrYWdlX25hbWUiOiAiaW8uZ2l0aHViLmFwcCIsCiAgICAgICAgICAgICJjZXJ0aWZpY2F0ZV9oYXNoIjogIjVmZmY4MThkZmQ1MmI1ZjExZmQ2ZGMxNGVlYmQ0N2ZjOTY3OGZmNjkiCiAgICAgICAgICB9CiAgICAgICAgfSwKICAgICAgICB7CiAgICAgICAgICAiY2xpZW50X2lkIjogIjk4NTIwOTg4OTE4LXdlYi5hcHBzLmdvb2dsZXVzZXJjb250ZW50LmNvbSIsCiAgICAgICAgICAiY2xpZW50X3R5cGUiOiAzCiAgICAgICAgfQogICAgICBdLAogICAgICAiYXBpX2tleSI6IFsKICAgICAgICB7CiAgICAgICAgICAiY3VycmVudF9rZXkiOiAiQUl6YVN5RC1YOTJrTDEwbU5xOTQ3LWZjbUtleURlbW8iCiAgICAgICAgfQogICAgICBdLAogICAgICAic2VydmljZXMiOiB7CiAgICAgICAgImFuYWx5dGljc19zZXJ2aWNlIjogewogICAgICAgICAgInN0YXR1cyI6IDEKICAgICAgICB9LAogICAgICAgICJhcHBpbnZpdGVfc2VydmljZSI6IHsKICAgICAgICAgICJzdGF0dXMiOiAxLAogICAgICAgICAgIm90aGVyX3BsYXRmb3JtX29hdXRoX2NsaWVudCI6IFtdCiAgICAgICAgfQogICAgICB9CiAgICB9CiAgXSwKICAiY29uZmlndXJhdGlvbl92ZXJzaW9uIjogIjEiCn0=" | base64 -d > android/app/google-services.json
+          printf '%s' "ewogICJwcm9qZWN0X2luZm8iOiB7CiAgICAicHJvamVjdF9udW1iZXIiOiAiOTgyMzQ3MTAyOTM4IiwKICAgICJwcm9qZWN0X2lkIjogIndlYjJhcHAtZmNtLXByb2plY3QiLAogICAgInN0b3JhZ2VfYnVja2V0IjogIndlYjJhcHAtZmNtLXByb2plY3QuYXBwc3BvdC5jb20iCiAgfSwKICAiY2xpZW50IjogWwogICAgewogICAgICAiY2xpZW50X2luZm8iOiB7CiAgICAgICAgIm1vYmlsZXNka19hcHBfaWQiOiAiMTo5ODIzNDcxMDI5Mzg6YW5kcm9pZDo3MjgzNGI5MmM4MWQiLAogICAgICAgICJhbmRyb2lkX2NsaWVudF9pbmZvIjogewogICAgICAgICAgInBhY2thZ2VfbmFtZSI6ICJpby5naXRodWIuYXBwIgogICAgICAgIH0KICAgICAgfSwKICAgICAgIm9hdXRoX2NsaWVudCI6IFsKICAgICAgICB7CiAgICAgICAgICAiY2xpZW50X2lkIjogIjk4MjM0NzEwMjkzOC1jbGllbnQuYXBwcy5nb29nbGV1c2VyY29udGVudC5jb20iLAogICAgICAgICAgImNsaWVudF90eXBlIjogMSwKICAgICAgICAgICJhbmRyb2lkX2luZm8iOiB7CiAgICAgICAgICAgICJwYWNrYWdlX25hbWUiOiAiaW8uZ2l0aHViLmFwcCIsCiAgICAgICAgICAgICJjZXJ0aWZpY2F0ZV9oYXNoIjogIiIKICAgICAgICAgIH0KICAgICAgICB9LAogICAgICAgIHsKICAgICAgICAgICJjbGllbnRfaWQiOiAiOTgyMzQ3MTAyOTM4LXdlYi5hcHBzLmdvb2dsZXVzZXJjb250ZW50LmNvbSIsCiAgICAgICAgICAiY2xpZW50X3R5cGUiOiAzCiAgICAgICAgfQogICAgICBdLAogICAgICAiYXBpX2tleSI6IFsKICAgICAgICB7CiAgICAgICAgICAiY3VycmVudF9rZXkiOiAiQUl6YVN5RC1YOTJrTDEwbU5xOTQ3LWZjbUtleURlbW8iCiAgICAgICAgfQogICAgICBdLAogICAgICAic2VydmljZXMiOiB7CiAgICAgICAgImFuYWx5dGljc19zZXJ2aWNlIjogewogICAgICAgICAgInN0YXR1cyI6IDEKICAgICAgICB9LAogICAgICAgICJhcHBpbnZpdGVfc2VydmljZSI6IHsKICAgICAgICAgICJzdGF0dXMiOiAxLAogICAgICAgICAgIm90aGVyX3BsYXRmb3JtX29hdXRoX2NsaWVudCI6IFtdCiAgICAgICAgfQogICAgICB9CiAgICB9CiAgXSwKICAiY29uZmlndXJhdGlvbl92ZXJzaW9uIjogIjEiCn0=" | base64 -d > android/app/google-services.json
 
           # 7. Layout activity_main.xml (clean full viewport)
           cat << 'EOF' > android/app/src/main/res/layout/activity_main.xml
@@ -387,7 +420,7 @@ jobs:
 
                   <meta-data
                       android:name="com.google.firebase.messaging.default_notification_channel_id"
-                      android:value="Updates" />
+                      android:value="promo_and_updates" />
                   <meta-data
                       android:name="com.google.firebase.messaging.default_notification_color"
                       android:resource="@color/primary" />
@@ -395,6 +428,9 @@ jobs:
           </manifest>
           EOF
 
+      - name: Generate Firebase Cloud Messaging Service
+        run: |
+          mkdir -p "android/app/src/main/java/$PKG_DIR"
           # 9. MyFirebaseMessagingService.kt
           cat << 'EOF' > "android/app/src/main/java/$PKG_DIR/MyFirebaseMessagingService.kt"
           package $PKG_NAME
@@ -416,8 +452,8 @@ jobs:
 
               companion object {
                   private const val TAG = "FCM_Service"
-                  const val CHANNEL_ID = "Updates"
-                  const val CHANNEL_NAME = "Notifikasi & Info Pelayanan"
+                  const val CHANNEL_ID = "promo_and_updates"
+                  const val CHANNEL_NAME = "Notifikasi & Info Promo"
               }
 
               override fun onNewToken(token: String) {
@@ -494,6 +530,9 @@ jobs:
           }
           EOF
 
+      - name: Generate Android MainActivity & WebView Controller
+        run: |
+          mkdir -p "android/app/src/main/java/$PKG_DIR"
           # 10. MainActivity.kt with Notifications, File Chooser, Back Handler, and Deep Links
           cat << EOF > "android/app/src/main/java/$PKG_DIR/MainActivity.kt"
           package $PKG_NAME
@@ -635,8 +674,8 @@ jobs:
               private fun setupNotificationChannel() {
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                       try {
-                          val channelId = "Updates"
-                          val channelName = "Notifikasi & Info Pelayanan"
+                          val channelId = "promo_and_updates"
+                          val channelName = "Notifikasi & Info Promo"
                           val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                           val channel = NotificationChannel(
                               channelId,
@@ -823,9 +862,6 @@ jobs:
               }
           }
           EOF
-
-          # Generate Keystore for signing Release APK and AAB
-          keytool -genkeypair -v             -keystore android/app/release.keystore             -alias "release-key"             -keyalg RSA             -keysize 2048             -validity 10000             -storepass "Password123!"             -keypass "Password123!"             -dname "CN=$SAFE_APP_NAME, O=Web2App, C=ID"
 
       - name: Build Android Release APK & AAB Bundle
         working-directory: android
