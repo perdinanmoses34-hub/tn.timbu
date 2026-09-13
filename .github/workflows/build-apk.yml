@@ -15,24 +15,9 @@ on:
         description: 'Package Name / Application ID'
         required: true
         default: 'com.web2app.app'
-      theme_color:
-        description: 'Warna Tema Utama'
-        required: false
-        default: '#2563EB'
-      status_bar_color:
-        description: 'Warna Status Bar'
-        required: false
-        default: '#1D4ED8'
-      nav_bar_color:
-        description: 'Warna Navigation Bar'
-        required: false
-        default: '#0F172A'
 
 permissions:
   contents: write
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build-android:
@@ -42,31 +27,30 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install Gradle 8.4
-        run: |
-          wget -q https://services.gradle.org/distributions/gradle-8.4-bin.zip
-          unzip -q gradle-8.4-bin.zip -d /opt
-          echo "/opt/gradle-8.4/bin" >> $GITHUB_PATH
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.4'
+          cache-disabled: true
 
-      - name: Accept Android SDK Licenses
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK Licenses & Install Platform
         run: |
-          export ANDROID_HOME=/usr/local/lib/android/sdk
-          export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
-          yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          yes | sdkmanager --licenses || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" || true
 
       - name: Generate Android Project Sources
         run: |
           RAW_TARGET_URL="${{ github.event.inputs.target_url }}"
           RAW_APP_NAME="${{ github.event.inputs.app_name }}"
           RAW_PKG_NAME="${{ github.event.inputs.package_name }}"
-          RAW_THEME_COLOR="${{ github.event.inputs.theme_color }}"
-          RAW_STATUS_BAR_COLOR="${{ github.event.inputs.status_bar_color }}"
-          RAW_NAV_BAR_COLOR="${{ github.event.inputs.nav_bar_color }}"
 
           if [ -z "$RAW_TARGET_URL" ]; then
             RAW_TARGET_URL="https://tokoonline-store.com"
@@ -76,15 +60,6 @@ jobs:
           fi
           if [ -z "$RAW_PKG_NAME" ]; then
             RAW_PKG_NAME="com.web2app.app"
-          fi
-          if [ -z "$RAW_THEME_COLOR" ]; then
-            RAW_THEME_COLOR="#2563EB"
-          fi
-          if [ -z "$RAW_STATUS_BAR_COLOR" ]; then
-            RAW_STATUS_BAR_COLOR="#1D4ED8"
-          fi
-          if [ -z "$RAW_NAV_BAR_COLOR" ]; then
-            RAW_NAV_BAR_COLOR="#0F172A"
           fi
 
           # Sanitize package name (letters, digits, underscores, dots)
@@ -101,8 +76,8 @@ jobs:
 
           # Sanitize App Name for XML
           APP_NAME="$RAW_APP_NAME"
-          SAFE_APP_NAME=$(echo "$APP_NAME" | sed "s/'/\\\\'/g" | sed 's/&/\\&amp;/g' | sed 's/</\\&lt;/g' | sed 's/>/\\&gt;/g')
-          SAFE_TARGET_URL=$(echo "$TARGET_URL" | sed 's/&/\\&amp;/g')
+          SAFE_APP_NAME=$(echo "$APP_NAME" | sed "s/'/\\'/g" | sed 's/&/\&amp;/g' | sed 's/</\&lt;/g' | sed 's/>/\&gt;/g')
+          SAFE_TARGET_URL=$(echo "$TARGET_URL" | sed 's/&/\&amp;/g')
 
           # Calculate package directory path
           PKG_DIR=$(echo "$PKG_NAME" | tr '.' '/')
@@ -133,12 +108,11 @@ jobs:
           include(":app")
           EOF
 
-          # 2. Root build.gradle.kts with Google Services support
+          # 2. Root build.gradle.kts
           cat << 'EOF' > android/build.gradle.kts
           plugins {
               id("com.android.application") version "8.3.2" apply false
               id("org.jetbrains.kotlin.android") version "1.9.22" apply false
-              id("com.google.gms.google-services") version "4.4.2" apply false
           }
           EOF
 
@@ -149,12 +123,11 @@ jobs:
           android.builder.sdkDownload=true
           EOF
 
-          # 4. App build.gradle.kts with Firebase & WebKit
+          # 4. App build.gradle.kts
           cat << EOF > android/app/build.gradle.kts
           plugins {
               id("com.android.application")
               id("org.jetbrains.kotlin.android")
-              id("com.google.gms.google-services")
           }
 
           android {
@@ -194,10 +167,6 @@ jobs:
               implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
               implementation("androidx.webkit:webkit:1.11.0")
               implementation("androidx.activity:activity-ktx:1.9.2")
-
-              // Firebase Cloud Messaging (FCM) & BoM
-              implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
-              implementation("com.google.firebase:firebase-messaging-ktx")
           }
           EOF
 
@@ -213,12 +182,12 @@ jobs:
           </resources>
           EOF
 
-          cat << EOF > android/app/src/main/res/values/colors.xml
+          cat << 'EOF' > android/app/src/main/res/values/colors.xml
           <resources>
-              <color name="primary">$RAW_THEME_COLOR</color>
-              <color name="status_bar">$RAW_STATUS_BAR_COLOR</color>
-              <color name="nav_bar">$RAW_NAV_BAR_COLOR</color>
-              <color name="splash_bg">$RAW_STATUS_BAR_COLOR</color>
+              <color name="primary">#2563EB</color>
+              <color name="status_bar">#1D4ED8</color>
+              <color name="nav_bar">#0F172A</color>
+              <color name="splash_bg">#0F172A</color>
           </resources>
           EOF
 
@@ -233,88 +202,91 @@ jobs:
           </resources>
           EOF
 
-          # Fallback Vector Icon with App Theme Color
+          
+          # Fallback Vector Icon
           mkdir -p android/app/src/main/res/drawable
-          mkdir -p android/app/src/main/res/mipmap-anydpi-v26
           cat << 'EOF' > android/app/src/main/res/drawable/ic_launcher.xml
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
               android:width="108dp"
               android:height="108dp"
               android:viewportWidth="108"
               android:viewportHeight="108">
-              <path android:fillColor="${RAW_THEME_COLOR}" android:pathData="M0,0h108v108h-108z"/>
+              <path android:fillColor="#2563EB" android:pathData="M0,0h108v108h-108z"/>
               <path android:fillColor="#FFFFFF" android:pathData="M35,24h38c6.075,0 11,4.925 11,11v38c0,6.075 -4.925,11 -11,11h-38c-6.075,0 -11,-4.925 -11,-11v-38c0,-6.075 4.925,-11 11,-11z"/>
-              <path android:fillColor="${RAW_THEME_COLOR}" android:pathData="M42,32h24c3.314,0 6,2.686 6,6v32c0,3.314 -2.686,6 -6,6h-24c-3.314,0 -6,-2.686 -6,-6v-32c0,-3.314 2.686,-6 6,-6z"/>
+              <path android:fillColor="#2563EB" android:pathData="M42,32h24c3.314,0 6,2.686 6,6v32c0,3.314 -2.686,6 -6,6h-24c-3.314,0 -6,-2.686 -6,-6v-32c0,-3.314 2.686,-6 6,-6z"/>
           </vector>
           EOF
-          cp android/app/src/main/res/drawable/ic_launcher.xml android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
-          cp android/app/src/main/res/drawable/ic_launcher.xml android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+          mkdir -p android/app/src/main/res/mipmap-xxxhdpi
+          cp android/app/src/main/res/drawable/ic_launcher.xml android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.xml
+          cp android/app/src/main/res/drawable/ic_launcher.xml android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.xml
 
-          # 6. Embedded google-services.json for Firebase Push Notifications
-          cat << 'EOF' > android/app/google-services.json
-          {
-            "project_info": {
-              "project_number": "982347102938",
-              "project_id": "app-push-project",
-              "storage_bucket": "app-push-project.appspot.com"
-            },
-            "client": [
-              {
-                "client_info": {
-                  "mobilesdk_app_id": "1:982347102938:android:72834b92c81d",
-                  "android_client_info": {
-                    "package_name": "com.web2app.app"
-                  }
-                },
-                "oauth_client": [],
-                "api_key": [
-                  {
-                    "current_key": "AIzaSyD-X92kL10mNq947-fcmKeyDemo"
-                  }
-                ],
-                "services": {
-                  "analytics_service": {
-                    "status": 1
-                  }
-                }
-              }
-            ],
-            "configuration_version": "1"
-          }
-          EOF
 
-          # 7. Layout activity_main.xml (with fitsSystemWindows to protect status/nav bar visual alignment)
+          # 7. Layout activity_main.xml
           cat << 'EOF' > android/app/src/main/res/layout/activity_main.xml
           <?xml version="1.0" encoding="utf-8"?>
           <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
               android:layout_width="match_parent"
-              android:layout_height="match_parent"
-              android:fitsSystemWindows="true"
-              android:background="@color/status_bar">
+              android:layout_height="match_parent">
 
               <androidx.swiperefreshlayout.widget.SwipeRefreshLayout 
                   android:id="@+id/swipeRefresh"
                   android:layout_width="match_parent"
                   android:layout_height="match_parent">
 
-                  <FrameLayout
+                  <WebView
+                      android:id="@+id/webView"
                       android:layout_width="match_parent"
-                      android:layout_height="match_parent">
-
-                      <WebView
-                          android:id="@+id/webView"
-                          android:layout_width="match_parent"
-                          android:layout_height="match_parent" />
-
-                      <ProgressBar
-                          android:id="@+id/progressBar"
-                          style="?android:attr/progressBarStyleHorizontal"
-                          android:layout_width="match_parent"
-                          android:layout_height="3dp"
-                          android:indeterminate="false"
-                          android:max="100" />
-                  </FrameLayout>
+                      android:layout_height="match_parent" />
               </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+              <ProgressBar
+                  android:id="@+id/progressBar"
+                  style="?android:attr/progressBarStyleHorizontal"
+                  android:layout_width="match_parent"
+                  android:layout_height="4dp"
+                  android:indeterminate="false"
+                  android:max="100" />
+              
+              <!-- Native Splash Screen Overlay -->
+              <LinearLayout
+                  android:id="@+id/splashOverlay"
+                  android:layout_width="match_parent"
+                  android:layout_height="match_parent"
+                  android:orientation="vertical"
+                  android:gravity="center"
+                  android:background="@color/splash_bg"
+                  android:padding="24dp">
+
+                  <ImageView
+                      android:id="@+id/splashIcon"
+                      android:layout_width="96dp"
+                      android:layout_height="96dp"
+                      android:src="@mipmap/ic_launcher"
+                      android:contentDescription="@string/app_name" />
+
+                  <TextView
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:layout_marginTop="16dp"
+                      android:text="@string/app_name"
+                      android:textColor="#FFFFFF"
+                      android:textSize="20sp"
+                      android:textStyle="bold" />
+
+                  <TextView
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:layout_marginTop="8dp"
+                      android:text="Aplikasi Resmi Android"
+                      android:textColor="#94A3B8"
+                      android:textSize="14sp" />
+
+                  <ProgressBar
+                      android:layout_width="32dp"
+                      android:layout_height="32dp"
+                      android:layout_marginTop="32dp"
+                      android:indeterminate="true" />
+              </LinearLayout>
           </FrameLayout>
           EOF
 
@@ -322,10 +294,13 @@ jobs:
           cat << 'EOF' > android/app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-permission android:name="android.permission.INTERNET" />
+                        <uses-permission android:name="android.permission.INTERNET" />
               <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-permission android:name="android.permission.CAMERA" />
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
               <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-              <uses-permission android:name="android.permission.VIBRATE" />
 
               <application
                   android:allowBackup="true"
@@ -344,162 +319,30 @@ jobs:
                           <category android:name="android.intent.category.LAUNCHER" />
                       </intent-filter>
                   </activity>
-
-                  <!-- Firebase Cloud Messaging Receiver Service -->
-                  <service
-                      android:name=".MyFirebaseMessagingService"
-                      android:exported="false">
-                      <intent-filter>
-                          <action android:name="com.google.firebase.MESSAGING_EVENT" />
-                      </intent-filter>
-                  </service>
-
-                  <meta-data
-                      android:name="com.google.firebase.messaging.default_notification_channel_id"
-                      android:value="promo_and_updates" />
-                  <meta-data
-                      android:name="com.google.firebase.messaging.default_notification_color"
-                      android:resource="@color/primary" />
               </application>
           </manifest>
           EOF
 
-          # 9. MyFirebaseMessagingService.kt
-          cat << 'EOF' > "android/app/src/main/java/$PKG_DIR/MyFirebaseMessagingService.kt"
-          package $PKG_NAME
-
-          import android.app.NotificationChannel
-          import android.app.NotificationManager
-          import android.app.PendingIntent
-          import android.content.Context
-          import android.content.Intent
-          import android.graphics.Color
-          import android.media.RingtoneManager
-          import android.os.Build
-          import android.util.Log
-          import androidx.core.app.NotificationCompat
-          import com.google.firebase.messaging.FirebaseMessagingService
-          import com.google.firebase.messaging.RemoteMessage
-
-          class MyFirebaseMessagingService : FirebaseMessagingService() {
-
-              companion object {
-                  private const val TAG = "FCM_Service"
-                  const val CHANNEL_ID = "promo_and_updates"
-                  const val CHANNEL_NAME = "Notifikasi & Info Promo"
-              }
-
-              override fun onNewToken(token: String) {
-                  super.onNewToken(token)
-                  Log.d(TAG, "Refreshed FCM Token: \$token")
-                  val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-                  prefs.edit().putString("fcm_token", token).apply()
-              }
-
-              override fun onMessageReceived(remoteMessage: RemoteMessage) {
-                  super.onMessageReceived(remoteMessage)
-                  Log.d(TAG, "Pesan masuk FCM: \${remoteMessage.data}")
-
-                  val title = remoteMessage.notification?.title 
-                      ?: remoteMessage.data["title"] 
-                      ?: getString(R.string.app_name)
-                      
-                  val body = remoteMessage.notification?.body 
-                      ?: remoteMessage.data["body"] 
-                      ?: "Anda menerima pesan baru"
-
-                  val targetUrl = remoteMessage.data["target_url"] 
-                      ?: remoteMessage.data["url"] 
-                      ?: getString(R.string.target_url)
-
-                  showNotification(title, body, targetUrl)
-              }
-
-              private fun showNotification(title: String, messageBody: String, targetUrl: String) {
-                  val intent = Intent(this, MainActivity::class.java).apply {
-                      addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                      putExtra("target_url", targetUrl)
-                  }
-
-                  val pendingIntent = PendingIntent.getActivity(
-                      this,
-                      System.currentTimeMillis().toInt(),
-                      intent,
-                      PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
-                  )
-
-                  val defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-                  val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                      val channel = NotificationChannel(
-                          CHANNEL_ID,
-                          CHANNEL_NAME,
-                          NotificationManager.IMPORTANCE_HIGH
-                      ).apply {
-                          description = "Saluran resmi notifikasi \${getString(R.string.app_name)}"
-                          enableLights(true)
-                          lightColor = Color.parseColor("$RAW_THEME_COLOR")
-                          enableVibration(true)
-                      }
-                      notificationManager.createNotificationChannel(channel)
-                  }
-
-                  val notificationBuilder = NotificationCompat.Builder(this, CHANNEL_ID)
-                      .setSmallIcon(R.mipmap.ic_launcher)
-                      .setContentTitle(title)
-                      .setContentText(messageBody)
-                      .setStyle(NotificationCompat.BigTextStyle().bigText(messageBody))
-                      .setAutoCancel(true)
-                      .setSound(defaultSoundUri)
-                      .setVibrate(longArrayOf(0, 250, 200, 250))
-                      .setColor(Color.parseColor("$RAW_THEME_COLOR"))
-                      .setPriority(NotificationCompat.PRIORITY_HIGH)
-                      .setContentIntent(pendingIntent)
-
-                  val notificationId = (System.currentTimeMillis() % 10000).toInt()
-                  notificationManager.notify(notificationId, notificationBuilder.build())
-              }
-          }
-          EOF
-
-          # 10. MainActivity.kt with Notifications, File Chooser, Back Handler, and Deep Links
+          # 9. MainActivity.kt with File Chooser (Camera/Gallery) and Back Handler
           cat << EOF > "android/app/src/main/java/$PKG_DIR/MainActivity.kt"
           package $PKG_NAME
 
-          import android.Manifest
           import android.annotation.SuppressLint
-          import android.app.NotificationChannel
-          import android.app.NotificationManager
-          import android.content.Context
           import android.content.Intent
-          import android.content.pm.PackageManager
           import android.graphics.Bitmap
-          import android.graphics.Color
           import android.net.Uri
-          import android.os.Build
           import android.os.Bundle
-          import android.util.Log
           import android.view.View
-          import android.webkit.CookieManager
           import android.webkit.GeolocationPermissions
           import android.webkit.ValueCallback
           import android.webkit.WebChromeClient
-          import android.webkit.WebResourceError
-          import android.webkit.WebResourceRequest
-          import android.webkit.WebSettings
           import android.webkit.WebView
           import android.webkit.WebViewClient
           import android.widget.ProgressBar
-          import android.widget.Toast
           import androidx.activity.OnBackPressedCallback
           import androidx.activity.result.contract.ActivityResultContracts
           import androidx.appcompat.app.AppCompatActivity
-          import androidx.core.content.ContextCompat
-          import androidx.core.graphics.ColorUtils
-          import androidx.core.view.WindowInsetsControllerCompat
           import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-          import com.google.firebase.messaging.FirebaseMessaging
 
           class MainActivity : AppCompatActivity() {
               private lateinit var webView: WebView
@@ -507,18 +350,6 @@ jobs:
               private lateinit var progressBar: ProgressBar
               private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
 
-              // Runtime Permission for Push Notifications (Android 13+ / API 33+)
-              private val notificationPermissionLauncher = registerForActivityResult(
-                  ActivityResultContracts.RequestPermission()
-              ) { isGranted ->
-                  if (isGranted) {
-                      Log.d("MainActivity", "Izin notifikasi disetujui")
-                  } else {
-                      Log.w("MainActivity", "Izin notifikasi ditolak oleh pengguna")
-                  }
-              }
-
-              // File Chooser for camera & gallery uploads
               private val fileChooserLauncher = registerForActivityResult(
                   ActivityResultContracts.StartActivityForResult()
               ) { result ->
@@ -544,115 +375,14 @@ jobs:
                   super.onCreate(savedInstanceState)
                   setContentView(R.layout.activity_main)
 
-                  setupSystemBars()
-                  setupNotificationChannel()
-                  requestNotificationPermission()
-                  setupFCM()
+                  try {
+                      window.statusBarColor = android.graphics.Color.parseColor("#1D4ED8")
+                      window.navigationBarColor = android.graphics.Color.parseColor("#0F172A")
+                  } catch (e: Exception) {}
 
                   webView = findViewById(R.id.webView)
                   swipeRefresh = findViewById(R.id.swipeRefresh)
                   progressBar = findViewById(R.id.progressBar)
-
-                  setupWebView()
-                  setupSwipeRefresh()
-                  setupBackNavigation()
-                  handleNotificationIntent(intent)
-
-                  val initialUrl = intent.getStringExtra("target_url") ?: getString(R.string.target_url)
-                  webView.loadUrl(initialUrl)
-              }
-
-              override fun onNewIntent(intent: Intent) {
-                  super.onNewIntent(intent)
-                  handleNotificationIntent(intent)
-              }
-
-              private fun handleNotificationIntent(intent: Intent?) {
-                  val pushUrl = intent?.getStringExtra("target_url")
-                  if (!pushUrl.isNullOrEmpty() && ::webView.isInitialized) {
-                      webView.loadUrl(pushUrl)
-                  }
-              }
-
-              private fun setupSystemBars() {
-                  try {
-                      val statusColor = Color.parseColor("$RAW_STATUS_BAR_COLOR")
-                      val navColor = Color.parseColor("$RAW_NAV_BAR_COLOR")
-                      window.statusBarColor = statusColor
-                      window.navigationBarColor = navColor
-
-                      val windowInsetsController = WindowInsetsControllerCompat(window, window.decorView)
-                      val isLightStatus = ColorUtils.calculateLuminance(statusColor) > 0.5
-                      val isLightNav = ColorUtils.calculateLuminance(navColor) > 0.5
-                      windowInsetsController.isAppearanceLightStatusBars = isLightStatus
-                      windowInsetsController.isAppearanceLightNavigationBars = isLightNav
-                  } catch (e: Exception) {
-                      Log.e("MainActivity", "Error setting system bar colors", e)
-                  }
-              }
-
-              private fun setupNotificationChannel() {
-                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                      try {
-                          val channelId = "promo_and_updates"
-                          val channelName = "Notifikasi & Info Promo"
-                          val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                          val channel = NotificationChannel(
-                              channelId,
-                              channelName,
-                              NotificationManager.IMPORTANCE_HIGH
-                          ).apply {
-                              description = "Saluran resmi notifikasi \${getString(R.string.app_name)}"
-                              enableLights(true)
-                              enableVibration(true)
-                          }
-                          manager.createNotificationChannel(channel)
-                      } catch (e: Exception) {
-                          Log.e("MainActivity", "Error creating notification channel", e)
-                      }
-                  }
-              }
-
-              private fun requestNotificationPermission() {
-                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                      if (ContextCompat.checkSelfPermission(
-                              this,
-                              Manifest.permission.POST_NOTIFICATIONS
-                          ) != PackageManager.PERMISSION_GRANTED
-                      ) {
-                          notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                      }
-                  }
-              }
-
-              private fun setupFCM() {
-                  try {
-                      FirebaseMessaging.getInstance().subscribeToTopic("all_users")
-                          .addOnCompleteListener { task ->
-                              if (task.isSuccessful) {
-                                  Log.d("FCM", "Berhasil berlangganan topik: all_users")
-                              }
-                          }
-
-                      FirebaseMessaging.getInstance().token
-                          .addOnCompleteListener { task ->
-                              if (task.isSuccessful) {
-                                  val token = task.result
-                                  Log.d("FCM", "FCM Registration Token: \$token")
-                                  val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-                                  prefs.edit().putString("fcm_token", token).apply()
-                              }
-                          }
-                  } catch (e: Exception) {
-                      Log.w("FCM", "FCM setup status: \${e.message}")
-                  }
-              }
-
-              @SuppressLint("SetJavaScriptEnabled")
-              private fun setupWebView() {
-                  val cookieManager = CookieManager.getInstance()
-                  cookieManager.setAcceptCookie(true)
-                  cookieManager.setAcceptThirdPartyCookies(webView, true)
 
                   webView.settings.apply {
                       javaScriptEnabled = true
@@ -665,61 +395,15 @@ jobs:
                       setSupportZoom(true)
                       builtInZoomControls = true
                       displayZoomControls = false
-                      mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                      cacheMode = WebSettings.LOAD_DEFAULT
-                      mediaPlaybackRequiresUserGesture = false
-                      javaScriptCanOpenWindowsAutomatically = true
-                      val defaultUa = userAgentString
-                      userAgentString = "$defaultUa Web2App/1.0"
                   }
 
                   webView.webViewClient = object : WebViewClient() {
                       override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                           progressBar.visibility = View.VISIBLE
                       }
-
                       override fun onPageFinished(view: WebView?, url: String?) {
                           progressBar.visibility = View.GONE
                           swipeRefresh.isRefreshing = false
-                      }
-
-                      override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                          val url = request?.url?.toString() ?: return false
-                          val targetHost = Uri.parse(getString(R.string.target_url)).host
-
-                          if (url.startsWith("tel:") || url.startsWith("mailto:") || 
-                              url.startsWith("whatsapp:") || url.startsWith("sms:") ||
-                              url.startsWith("geo:") || url.startsWith("intent:") ||
-                              url.startsWith("market:")) {
-                              try {
-                                  val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                                  startActivity(intent)
-                                  return true
-                              } catch (e: Exception) {
-                                  Toast.makeText(this@MainActivity, "Aplikasi pendukung tidak terpasang di perangkat", Toast.LENGTH_SHORT).show()
-                                  return true
-                              }
-                          }
-
-                          val uriHost = Uri.parse(url).host
-                          if (uriHost != null && targetHost != null && uriHost.contains(targetHost)) {
-                              return false
-                          }
-
-                          try {
-                              val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                              startActivity(browserIntent)
-                              return true
-                          } catch (e: Exception) {
-                              return false
-                          }
-                      }
-
-                      override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                          if (request?.isForMainFrame == true) {
-                              progressBar.visibility = View.GONE
-                              swipeRefresh.isRefreshing = false
-                          }
                       }
                   }
 
@@ -757,19 +441,24 @@ jobs:
                           callback?.invoke(origin, true, false)
                       }
                   }
-              }
 
-              private fun setupSwipeRefresh() {
                   val pullRefreshEnabled = resources.getBoolean(R.bool.pull_to_refresh_enabled)
                   swipeRefresh.isEnabled = pullRefreshEnabled
                   if (pullRefreshEnabled) {
                       swipeRefresh.setOnRefreshListener {
                           webView.reload()
                       }
+                      // Hanya izinkan refresh saat halaman benar-benar di puncak (scrollY == 0)
+                      swipeRefresh.setOnChildScrollUpCallback { _, _ ->
+                          webView.canScrollVertically(-1) || webView.scrollY > 0
+                      }
+                      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                          webView.setOnScrollChangeListener { _, _, scrollY, _, _ ->
+                              swipeRefresh.isEnabled = pullRefreshEnabled && (scrollY == 0 && !webView.canScrollVertically(-1))
+                          }
+                      }
                   }
-              }
 
-              private fun setupBackNavigation() {
                   onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
                       override fun handleOnBackPressed() {
                           if (webView.canGoBack()) {
@@ -779,6 +468,19 @@ jobs:
                           }
                       }
                   })
+
+                  
+                  val splashOverlay = findViewById<View>(R.id.splashOverlay)
+                  android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                      splashOverlay?.animate()
+                          ?.alpha(0f)
+                          ?.setDuration(400)
+                          ?.withEndAction { splashOverlay.visibility = View.GONE }
+                  }, 2000L)
+  
+
+                  val url = getString(R.string.target_url)
+                  webView.loadUrl(url)
               }
           }
           EOF
@@ -786,8 +488,6 @@ jobs:
       - name: Build Android APK
         working-directory: android
         run: |
-          export ANDROID_HOME=/usr/local/lib/android/sdk
-          export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
           gradle assembleDebug --no-daemon --stacktrace
 
       - name: Upload Real APK Artifact
