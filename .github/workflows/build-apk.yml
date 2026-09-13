@@ -15,18 +15,6 @@ on:
         description: 'Package Name / Application ID'
         required: true
         default: 'com.web2app.app'
-      theme_color:
-        description: 'Warna Tema Utama'
-        required: false
-        default: '#2563EB'
-      status_bar_color:
-        description: 'Warna Status Bar'
-        required: false
-        default: '#1D4ED8'
-      nav_bar_color:
-        description: 'Warna Navigation Bar'
-        required: false
-        default: '#0F172A'
 
 permissions:
   contents: write
@@ -39,15 +27,16 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.4'
+          cache-disabled: true
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -62,9 +51,6 @@ jobs:
           RAW_TARGET_URL="${{ github.event.inputs.target_url }}"
           RAW_APP_NAME="${{ github.event.inputs.app_name }}"
           RAW_PKG_NAME="${{ github.event.inputs.package_name }}"
-          RAW_THEME_COLOR="${{ github.event.inputs.theme_color }}"
-          RAW_STATUS_BAR_COLOR="${{ github.event.inputs.status_bar_color }}"
-          RAW_NAV_BAR_COLOR="${{ github.event.inputs.nav_bar_color }}"
 
           if [ -z "$RAW_TARGET_URL" ]; then
             RAW_TARGET_URL="https://tokoonline-store.com"
@@ -74,15 +60,6 @@ jobs:
           fi
           if [ -z "$RAW_PKG_NAME" ]; then
             RAW_PKG_NAME="com.web2app.app"
-          fi
-          if [ -z "$RAW_THEME_COLOR" ]; then
-            RAW_THEME_COLOR="#2563EB"
-          fi
-          if [ -z "$RAW_STATUS_BAR_COLOR" ]; then
-            RAW_STATUS_BAR_COLOR="#1D4ED8"
-          fi
-          if [ -z "$RAW_NAV_BAR_COLOR" ]; then
-            RAW_NAV_BAR_COLOR="#0F172A"
           fi
 
           # Sanitize package name (letters, digits, underscores, dots)
@@ -205,12 +182,12 @@ jobs:
           </resources>
           EOF
 
-          cat << EOF > android/app/src/main/res/values/colors.xml
+          cat << 'EOF' > android/app/src/main/res/values/colors.xml
           <resources>
-              <color name="primary">$RAW_THEME_COLOR</color>
-              <color name="status_bar">$RAW_STATUS_BAR_COLOR</color>
-              <color name="nav_bar">$RAW_NAV_BAR_COLOR</color>
-              <color name="splash_bg">$RAW_STATUS_BAR_COLOR</color>
+              <color name="primary">#2563EB</color>
+              <color name="status_bar">#1D4ED8</color>
+              <color name="nav_bar">#0F172A</color>
+              <color name="splash_bg">#0F172A</color>
           </resources>
           EOF
 
@@ -256,24 +233,19 @@ jobs:
                   android:layout_width="match_parent"
                   android:layout_height="match_parent">
 
-                  <FrameLayout
+                  <WebView
+                      android:id="@+id/webView"
                       android:layout_width="match_parent"
-                      android:layout_height="match_parent">
-
-                      <WebView
-                          android:id="@+id/webView"
-                          android:layout_width="match_parent"
-                          android:layout_height="match_parent" />
-
-                      <ProgressBar
-                          android:id="@+id/progressBar"
-                          style="?android:attr/progressBarStyleHorizontal"
-                          android:layout_width="match_parent"
-                          android:layout_height="4dp"
-                          android:indeterminate="false"
-                          android:max="100" />
-                  </FrameLayout>
+                      android:layout_height="match_parent" />
               </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+              <ProgressBar
+                  android:id="@+id/progressBar"
+                  style="?android:attr/progressBarStyleHorizontal"
+                  android:layout_width="match_parent"
+                  android:layout_height="4dp"
+                  android:indeterminate="false"
+                  android:max="100" />
               
               <!-- Native Splash Screen Overlay -->
               <LinearLayout
@@ -322,13 +294,13 @@ jobs:
           cat << 'EOF' > android/app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+                        <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-permission android:name="android.permission.CAMERA" />
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
               <application
                   android:allowBackup="true"
@@ -404,17 +376,8 @@ jobs:
                   setContentView(R.layout.activity_main)
 
                   try {
-                      val statusColor = android.graphics.Color.parseColor("$RAW_STATUS_BAR_COLOR")
-                      val navColor = android.graphics.Color.parseColor("$RAW_NAV_BAR_COLOR")
-                      window.statusBarColor = statusColor
-                      window.navigationBarColor = navColor
-                      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                          val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(statusColor)
-                          if (luminance > 0.5) {
-                              @Suppress("DEPRECATION")
-                              window.decorView.systemUiVisibility = window.decorView.systemUiVisibility or android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
-                          }
-                      }
+                      window.statusBarColor = android.graphics.Color.parseColor("#1D4ED8")
+                      window.navigationBarColor = android.graphics.Color.parseColor("#0F172A")
                   } catch (e: Exception) {}
 
                   webView = findViewById(R.id.webView)
@@ -484,6 +447,15 @@ jobs:
                   if (pullRefreshEnabled) {
                       swipeRefresh.setOnRefreshListener {
                           webView.reload()
+                      }
+                      // Hanya izinkan refresh saat halaman benar-benar di puncak (scrollY == 0)
+                      swipeRefresh.setOnChildScrollUpCallback { _, _ ->
+                          webView.canScrollVertically(-1) || webView.scrollY > 0
+                      }
+                      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                          webView.setOnScrollChangeListener { _, _, scrollY, _, _ ->
+                              swipeRefresh.isEnabled = pullRefreshEnabled && (scrollY == 0 && !webView.canScrollVertically(-1))
+                          }
                       }
                   }
 
