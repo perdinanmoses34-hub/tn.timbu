@@ -60,18 +60,18 @@ export const DEMO_PRESETS: PresetItem[] = [
   },
 ];
 
-export function getInitialAppConfig(presetUrl: string = 'https://tokoonline-store.com'): AppConfig {
-  const defaultPackage = 'com.tokoonline.store';
+export function getInitialAppConfig(presetUrl: string = 'https://tntimbu.github.io/jesuskingdomchrist/'): AppConfig {
+  const defaultPackage = 'io.github.app';
   const defaultAlias = 'release-key';
 
   return {
     url: presetUrl,
-    appName: 'Toko Online Store',
+    appName: 'Monapa App',
     packageName: defaultPackage,
     versionName: '1.0.0',
     versionCode: 1,
-    themeColor: '#2563EB',
-    statusBarColor: '#1D4ED8',
+    themeColor: '#10B981',
+    statusBarColor: '#020203',
     navBarColor: '#0F172A',
     orientation: 'portrait',
     architecture: 'webview',
@@ -101,7 +101,7 @@ export function getInitialAppConfig(presetUrl: string = 'https://tokoonline-stor
     icon: {
       type: 'emoji',
       value: '🛍️',
-      bgColor: '#2563EB',
+      bgColor: '#10B981',
       shape: 'squircle',
     },
     splash: {

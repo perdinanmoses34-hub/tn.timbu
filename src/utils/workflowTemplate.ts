@@ -193,8 +193,9 @@ jobs:
       - name: Install Gradle 8.4
         run: |
           wget -q https://services.gradle.org/distributions/gradle-8.4-bin.zip
-          unzip -q gradle-8.4-bin.zip -d /opt
-          echo "/opt/gradle-8.4/bin" >> $GITHUB_PATH
+          mkdir -p $HOME/gradle
+          unzip -q gradle-8.4-bin.zip -d $HOME/gradle
+          echo "$HOME/gradle/gradle-8.4/bin" >> $GITHUB_PATH
 
       - name: Accept Android SDK Licenses
         run: |
@@ -369,7 +370,7 @@ jobs:
 
               // Firebase Cloud Messaging (FCM) & BoM
               implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
-              implementation("com.google.firebase:firebase-messaging-ktx")
+              implementation("com.google.firebase:firebase-messaging")
           }
           EOF
 
@@ -389,6 +390,7 @@ jobs:
           ${iconScript}
 
           # Generate Keystore for signing Release APK and AAB
+          rm -f android/app/release.keystore
           keytool -genkeypair -v \
             -keystore android/app/release.keystore \
             -alias "${config.keystore?.alias || 'release-key'}" \
@@ -397,7 +399,8 @@ jobs:
             -validity 10000 \
             -storepass "${config.keystore?.storePassword || 'Password123!'}" \
             -keypass "${config.keystore?.keyPassword || 'Password123!'}" \
-            -dname "CN=$SAFE_APP_NAME, O=Web2App, C=ID"
+            -dname "CN=Web2App, O=Web2App, C=ID" \
+            -noprompt
 
       - name: Generate Android Resources & Manifest
         run: |
@@ -432,6 +435,7 @@ jobs:
 
           # 6. Embedded google-services.json for Firebase Push Notifications
           printf '%s' "${googleServicesJsonBase64}" | base64 -d > android/app/google-services.json
+          sed -i "s/\"package_name\": \"[^\"]*\"/\"package_name\": \"$PKG_NAME\"/g" android/app/google-services.json
 
           # 7. Layout activity_main.xml (clean full viewport)
           cat << 'EOF' > android/app/src/main/res/layout/activity_main.xml
@@ -516,18 +520,18 @@ jobs:
           mkdir -p "android/app/src/main/java/$PKG_DIR"
           # 9. MyFirebaseMessagingService.kt
           cat << 'EOF' > "android/app/src/main/java/$PKG_DIR/MyFirebaseMessagingService.kt"
-          package $PKG_NAME
+          package __PACKAGE_NAME__
 
           import android.app.NotificationChannel
           import android.app.NotificationManager
           import android.app.PendingIntent
           import android.content.Context
           import android.content.Intent
-          import android.graphics.Color
           import android.media.RingtoneManager
           import android.os.Build
           import android.util.Log
           import androidx.core.app.NotificationCompat
+          import androidx.core.content.ContextCompat
           import com.google.firebase.messaging.FirebaseMessagingService
           import com.google.firebase.messaging.RemoteMessage
 
@@ -541,14 +545,14 @@ jobs:
 
               override fun onNewToken(token: String) {
                   super.onNewToken(token)
-                  Log.d(TAG, "Refreshed FCM Token: \$token")
+                  Log.d(TAG, "Refreshed FCM Token: " + token)
                   val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
                   prefs.edit().putString("fcm_token", token).apply()
               }
 
               override fun onMessageReceived(remoteMessage: RemoteMessage) {
                   super.onMessageReceived(remoteMessage)
-                  Log.d(TAG, "Pesan masuk FCM: \${remoteMessage.data}")
+                  Log.d(TAG, "Pesan masuk FCM: " + remoteMessage.data)
 
                   val title = remoteMessage.notification?.title 
                       ?: remoteMessage.data["title"] 
@@ -587,9 +591,9 @@ jobs:
                           CHANNEL_NAME,
                           NotificationManager.IMPORTANCE_HIGH
                       ).apply {
-                          description = "Saluran resmi notifikasi \${getString(R.string.app_name)}"
+                          description = "Saluran resmi notifikasi " + getString(R.string.app_name)
                           enableLights(true)
-                          lightColor = Color.parseColor("$RAW_THEME_COLOR")
+                          lightColor = ContextCompat.getColor(this@MyFirebaseMessagingService, R.color.primary)
                           enableVibration(true)
                       }
                       notificationManager.createNotificationChannel(channel)
@@ -603,7 +607,7 @@ jobs:
                       .setAutoCancel(true)
                       .setSound(defaultSoundUri)
                       .setVibrate(longArrayOf(0, 250, 200, 250))
-                      .setColor(Color.parseColor("$RAW_THEME_COLOR"))
+                      .setColor(ContextCompat.getColor(this, R.color.primary))
                       .setPriority(NotificationCompat.PRIORITY_HIGH)
                       .setContentIntent(pendingIntent)
 
@@ -612,13 +616,14 @@ jobs:
               }
           }
           EOF
+          sed -i "s/__PACKAGE_NAME__/$PKG_NAME/g" "android/app/src/main/java/$PKG_DIR/MyFirebaseMessagingService.kt"
 
       - name: Generate Android MainActivity & WebView Controller
         run: |
           mkdir -p "android/app/src/main/java/$PKG_DIR"
           # 10. MainActivity.kt with Notifications, File Chooser, Back Handler, and Deep Links
-          cat << EOF > "android/app/src/main/java/$PKG_DIR/MainActivity.kt"
-          package $PKG_NAME
+          cat << 'EOF' > "android/app/src/main/java/$PKG_DIR/MainActivity.kt"
+          package __PACKAGE_NAME__
 
           import android.Manifest
           import android.annotation.SuppressLint
@@ -731,8 +736,8 @@ jobs:
 
               private fun setupSystemBars() {
                   try {
-                      val statusColor = Color.parseColor("$RAW_STATUS_BAR_COLOR")
-                      val navColor = Color.parseColor("$RAW_NAV_BAR_COLOR")
+                      val statusColor = ContextCompat.getColor(this, R.color.status_bar)
+                      val navColor = ContextCompat.getColor(this, R.color.nav_bar)
                       window.statusBarColor = statusColor
                       window.navigationBarColor = navColor
 
@@ -757,7 +762,7 @@ jobs:
                               channelName,
                               NotificationManager.IMPORTANCE_HIGH
                           ).apply {
-                              description = "Saluran resmi notifikasi \${getString(R.string.app_name)}"
+                              description = "Saluran resmi notifikasi " + getString(R.string.app_name)
                               enableLights(true)
                               enableVibration(true)
                           }
@@ -793,13 +798,13 @@ jobs:
                           .addOnCompleteListener { task ->
                               if (task.isSuccessful) {
                                   val token = task.result
-                                  Log.d("FCM", "FCM Registration Token: \$token")
+                                  Log.d("FCM", "FCM Registration Token: " + token)
                                   val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
                                   prefs.edit().putString("fcm_token", token).apply()
                               }
                           }
                   } catch (e: Exception) {
-                      Log.w("FCM", "FCM setup status: \${e.message}")
+                      Log.w("FCM", "FCM setup status: " + e.message)
                   }
               }
 
@@ -825,7 +830,7 @@ jobs:
                       mediaPlaybackRequiresUserGesture = false
                       javaScriptCanOpenWindowsAutomatically = true
                       val defaultUa = userAgentString
-                      userAgentString = "$defaultUa Web2App/1.0"
+                      userAgentString = defaultUa + " Web2App/1.0"
                   }
 
                   webView.webViewClient = object : WebViewClient() {
@@ -937,13 +942,20 @@ jobs:
               }
           }
           EOF
+          sed -i "s/__PACKAGE_NAME__/$PKG_NAME/g" "android/app/src/main/java/$PKG_DIR/MainActivity.kt"
 
       - name: Build Android Release APK & AAB Bundle
         working-directory: android
         run: |
           export ANDROID_HOME=/usr/local/lib/android/sdk
           export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
-          gradle assembleRelease bundleRelease assembleDebug --no-daemon --stacktrace
+          chmod +x gradlew 2>/dev/null || true
+          echo "Building Release APK..."
+          gradle assembleRelease --no-daemon --stacktrace
+          echo "Building Release AAB Bundle (optional)..."
+          gradle bundleRelease --no-daemon --stacktrace || echo "AAB bundle build skipped or failed"
+          echo "Building Debug APK (optional)..."
+          gradle assembleDebug --no-daemon --stacktrace || echo "Debug APK build skipped or failed"
 
       - name: Upload Real Signed Release APK Artifact (~10 MB)
         uses: actions/upload-artifact@v4
@@ -969,18 +981,18 @@ jobs:
 }
 
 export const LATEST_WORKFLOW_YML = generateWorkflowYml({
-  url: 'https://tokoonline-store.com',
-  appName: 'Web2App',
-  packageName: 'com.web2app.app',
+  url: 'https://tntimbu.github.io/jesuskingdomchrist/',
+  appName: 'Monapa App',
+  packageName: 'io.github.app',
   versionName: '1.0.0',
   versionCode: 1,
-  themeColor: '#2563EB',
-  statusBarColor: '#1D4ED8',
+  themeColor: '#10B981',
+  statusBarColor: '#020203',
   navBarColor: '#0F172A',
   orientation: 'portrait',
   architecture: 'webview',
-  targetSdk: 34,
-  minSdk: 24,
+  targetSdk: 35,
+  minSdk: 29,
   permissions: {
     camera: true,
     location: true,
@@ -1005,14 +1017,14 @@ export const LATEST_WORKFLOW_YML = generateWorkflowYml({
   icon: {
     type: 'emoji',
     value: '🛍️',
-    bgColor: '#2563EB',
+    bgColor: '#10B981',
     shape: 'squircle',
   },
   splash: {
     enabled: true,
     durationSeconds: 2,
     bgColor: '#0F172A',
-    tagline: 'Aplikasi Resmi Android',
+    tagline: 'Belanja Cepat & Mudah',
   },
   playStore: {
     shortDesc: '',
