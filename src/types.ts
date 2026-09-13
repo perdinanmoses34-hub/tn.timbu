@@ -61,6 +61,7 @@ export interface FirebaseConfig {
   soundEnabled: boolean;
   vibrateEnabled: boolean;
   badgeEnabled: boolean;
+  rawGoogleServicesJson?: string;
 }
 
 export interface NotificationItem {

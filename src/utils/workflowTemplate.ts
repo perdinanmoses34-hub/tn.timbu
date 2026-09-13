@@ -1,8 +1,9 @@
 import { AppConfig } from '../types';
+import { generateGoogleServicesJson } from './firebaseHelper';
 
 /**
  * Generates an Android GitHub Actions workflow that compiles a real Android APK & AAB
- * faithfully matching all user configurations (App Icon, Colors, Splash, Permissions, Orientation).
+ * faithfully matching all user configurations (App Icon, Colors, Splash, Permissions, Orientation, and Firebase FCM).
  */
 export function generateWorkflowYml(config: AppConfig, iconBase64?: string): string {
   const safeAppName = (config.appName || 'Web2App').replace(/'/g, "\\'").replace(/"/g, '\\"');
@@ -12,6 +13,8 @@ export function generateWorkflowYml(config: AppConfig, iconBase64?: string): str
   const safeStatusBarColor = config.statusBarColor || '#1D4ED8';
   const safeNavBarColor = config.navBarColor || '#0F172A';
   const safeSplashBgColor = config.splash?.bgColor || config.statusBarColor || '#0F172A';
+  const channelId = config.firebase?.channelId || 'promo_and_updates';
+  const channelName = config.firebase?.channelName || 'Notifikasi & Info Promo';
   const orientationAttr = config.orientation && config.orientation !== 'unspecified' 
     ? `android:screenOrientation="${config.orientation}"` 
     : '';
@@ -20,6 +23,8 @@ export function generateWorkflowYml(config: AppConfig, iconBase64?: string): str
   const permissionsList = [
     '    <uses-permission android:name="android.permission.INTERNET" />',
     '    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />',
+    '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
+    '    <uses-permission android:name="android.permission.VIBRATE" />',
   ];
   if (config.permissions?.camera) {
     permissionsList.push('    <uses-permission android:name="android.permission.CAMERA" />');
@@ -36,9 +41,6 @@ export function generateWorkflowYml(config: AppConfig, iconBase64?: string): str
   }
   if (config.permissions?.microphone) {
     permissionsList.push('    <uses-permission android:name="android.permission.RECORD_AUDIO" />');
-  }
-  if (config.permissions?.notifications || config.firebase?.enabled) {
-    permissionsList.push('    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />');
   }
 
   // Splash Screen view block for activity_main.xml
@@ -139,6 +141,8 @@ EOF
           cp android/app/src/main/res/drawable/ic_launcher.xml android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
 `;
 
+  const googleServicesJson = generateGoogleServicesJson(config);
+
   return `name: Build Real Android APK & AAB
 
 on:
@@ -172,6 +176,9 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build-android:
     runs-on: ubuntu-latest
@@ -185,18 +192,17 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: '8.4'
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Accept Android SDK Licenses & Install Platform
+      - name: Install Gradle 8.4
         run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" || true
+          wget -q https://services.gradle.org/distributions/gradle-8.4-bin.zip
+          unzip -q gradle-8.4-bin.zip -d /opt
+          echo "/opt/gradle-8.4/bin" >> $GITHUB_PATH
+
+      - name: Accept Android SDK Licenses
+        run: |
+          export ANDROID_HOME=/usr/local/lib/android/sdk
+          export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
+          yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
       - name: Generate Android Project Sources
         run: |
@@ -272,11 +278,12 @@ jobs:
           include(":app")
           EOF
 
-          # 2. Root build.gradle.kts
+          # 2. Root build.gradle.kts with Google Services support
           cat << 'EOF' > android/build.gradle.kts
           plugins {
               id("com.android.application") version "8.3.2" apply false
               id("org.jetbrains.kotlin.android") version "1.9.22" apply false
+              id("com.google.gms.google-services") version "4.4.2" apply false
           }
           EOF
 
@@ -287,11 +294,12 @@ jobs:
           android.builder.sdkDownload=true
           EOF
 
-          # 4. App build.gradle.kts
+          # 4. App build.gradle.kts with Firebase & WebKit
           cat << EOF > android/app/build.gradle.kts
           plugins {
               id("com.android.application")
               id("org.jetbrains.kotlin.android")
+              id("com.google.gms.google-services")
           }
 
           android {
@@ -331,6 +339,10 @@ jobs:
               implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
               implementation("androidx.webkit:webkit:1.11.0")
               implementation("androidx.activity:activity-ktx:1.9.2")
+
+              // Firebase Cloud Messaging (FCM) & BoM
+              implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+              implementation("com.google.firebase:firebase-messaging-ktx")
           }
           EOF
 
@@ -368,12 +380,19 @@ jobs:
 
           ${iconScript}
 
-          # 7. Layout activity_main.xml
+          # 6. Embedded google-services.json for Firebase Push Notifications
+          cat << 'EOF' > android/app/google-services.json
+${googleServicesJson}
+EOF
+
+          # 7. Layout activity_main.xml (with fitsSystemWindows to protect status/nav bar visual alignment)
           cat << 'EOF' > android/app/src/main/res/layout/activity_main.xml
           <?xml version="1.0" encoding="utf-8"?>
           <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
               android:layout_width="match_parent"
-              android:layout_height="match_parent">
+              android:layout_height="match_parent"
+              android:fitsSystemWindows="true"
+              android:background="@color/status_bar">
 
               <androidx.swiperefreshlayout.widget.SwipeRefreshLayout 
                   android:id="@+id/swipeRefresh"
@@ -393,7 +412,7 @@ jobs:
                           android:id="@+id/progressBar"
                           style="?android:attr/progressBarStyleHorizontal"
                           android:layout_width="match_parent"
-                          android:layout_height="4dp"
+                          android:layout_height="3dp"
                           android:indeterminate="false"
                           android:max="100" />
                   </FrameLayout>
@@ -425,30 +444,162 @@ jobs:
                           <category android:name="android.intent.category.LAUNCHER" />
                       </intent-filter>
                   </activity>
+
+                  <!-- Firebase Cloud Messaging Receiver Service -->
+                  <service
+                      android:name=".MyFirebaseMessagingService"
+                      android:exported="false">
+                      <intent-filter>
+                          <action android:name="com.google.firebase.MESSAGING_EVENT" />
+                      </intent-filter>
+                  </service>
+
+                  <meta-data
+                      android:name="com.google.firebase.messaging.default_notification_channel_id"
+                      android:value="${channelId}" />
+                  <meta-data
+                      android:name="com.google.firebase.messaging.default_notification_color"
+                      android:resource="@color/primary" />
               </application>
           </manifest>
           EOF
 
-          # 9. MainActivity.kt with File Chooser (Camera/Gallery) and Back Handler
+          # 9. MyFirebaseMessagingService.kt
+          cat << 'EOF' > "android/app/src/main/java/$PKG_DIR/MyFirebaseMessagingService.kt"
+          package $PKG_NAME
+
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.PendingIntent
+          import android.content.Context
+          import android.content.Intent
+          import android.graphics.Color
+          import android.media.RingtoneManager
+          import android.os.Build
+          import android.util.Log
+          import androidx.core.app.NotificationCompat
+          import com.google.firebase.messaging.FirebaseMessagingService
+          import com.google.firebase.messaging.RemoteMessage
+
+          class MyFirebaseMessagingService : FirebaseMessagingService() {
+
+              companion object {
+                  private const val TAG = "FCM_Service"
+                  const val CHANNEL_ID = "${channelId}"
+                  const val CHANNEL_NAME = "${channelName}"
+              }
+
+              override fun onNewToken(token: String) {
+                  super.onNewToken(token)
+                  Log.d(TAG, "Refreshed FCM Token: \$token")
+                  val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+                  prefs.edit().putString("fcm_token", token).apply()
+              }
+
+              override fun onMessageReceived(remoteMessage: RemoteMessage) {
+                  super.onMessageReceived(remoteMessage)
+                  Log.d(TAG, "Pesan masuk FCM: \${remoteMessage.data}")
+
+                  val title = remoteMessage.notification?.title 
+                      ?: remoteMessage.data["title"] 
+                      ?: getString(R.string.app_name)
+                      
+                  val body = remoteMessage.notification?.body 
+                      ?: remoteMessage.data["body"] 
+                      ?: "Anda menerima pesan baru"
+
+                  val targetUrl = remoteMessage.data["target_url"] 
+                      ?: remoteMessage.data["url"] 
+                      ?: getString(R.string.target_url)
+
+                  showNotification(title, body, targetUrl)
+              }
+
+              private fun showNotification(title: String, messageBody: String, targetUrl: String) {
+                  val intent = Intent(this, MainActivity::class.java).apply {
+                      addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                      putExtra("target_url", targetUrl)
+                  }
+
+                  val pendingIntent = PendingIntent.getActivity(
+                      this,
+                      System.currentTimeMillis().toInt(),
+                      intent,
+                      PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
+                  )
+
+                  val defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                  val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      val channel = NotificationChannel(
+                          CHANNEL_ID,
+                          CHANNEL_NAME,
+                          NotificationManager.IMPORTANCE_HIGH
+                      ).apply {
+                          description = "Saluran resmi notifikasi \${getString(R.string.app_name)}"
+                          enableLights(true)
+                          lightColor = Color.parseColor("$RAW_THEME_COLOR")
+                          enableVibration(true)
+                      }
+                      notificationManager.createNotificationChannel(channel)
+                  }
+
+                  val notificationBuilder = NotificationCompat.Builder(this, CHANNEL_ID)
+                      .setSmallIcon(R.mipmap.ic_launcher)
+                      .setContentTitle(title)
+                      .setContentText(messageBody)
+                      .setStyle(NotificationCompat.BigTextStyle().bigText(messageBody))
+                      .setAutoCancel(true)
+                      .setSound(defaultSoundUri)
+                      .setVibrate(longArrayOf(0, 250, 200, 250))
+                      .setColor(Color.parseColor("$RAW_THEME_COLOR"))
+                      .setPriority(NotificationCompat.PRIORITY_HIGH)
+                      .setContentIntent(pendingIntent)
+
+                  val notificationId = (System.currentTimeMillis() % 10000).toInt()
+                  notificationManager.notify(notificationId, notificationBuilder.build())
+              }
+          }
+          EOF
+
+          # 10. MainActivity.kt with Notifications, File Chooser, Back Handler, and Deep Links
           cat << EOF > "android/app/src/main/java/$PKG_DIR/MainActivity.kt"
           package $PKG_NAME
 
+          import android.Manifest
           import android.annotation.SuppressLint
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.content.Context
           import android.content.Intent
+          import android.content.pm.PackageManager
           import android.graphics.Bitmap
+          import android.graphics.Color
           import android.net.Uri
+          import android.os.Build
           import android.os.Bundle
+          import android.util.Log
           import android.view.View
+          import android.webkit.CookieManager
           import android.webkit.GeolocationPermissions
           import android.webkit.ValueCallback
           import android.webkit.WebChromeClient
+          import android.webkit.WebResourceError
+          import android.webkit.WebResourceRequest
+          import android.webkit.WebSettings
           import android.webkit.WebView
           import android.webkit.WebViewClient
           import android.widget.ProgressBar
+          import android.widget.Toast
           import androidx.activity.OnBackPressedCallback
           import androidx.activity.result.contract.ActivityResultContracts
           import androidx.appcompat.app.AppCompatActivity
+          import androidx.core.content.ContextCompat
+          import androidx.core.graphics.ColorUtils
+          import androidx.core.view.WindowInsetsControllerCompat
           import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+          import com.google.firebase.messaging.FirebaseMessaging
 
           class MainActivity : AppCompatActivity() {
               private lateinit var webView: WebView
@@ -456,6 +607,18 @@ jobs:
               private lateinit var progressBar: ProgressBar
               private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
 
+              // Runtime Permission for Push Notifications (Android 13+ / API 33+)
+              private val notificationPermissionLauncher = registerForActivityResult(
+                  ActivityResultContracts.RequestPermission()
+              ) { isGranted ->
+                  if (isGranted) {
+                      Log.d("MainActivity", "Izin notifikasi disetujui")
+                  } else {
+                      Log.w("MainActivity", "Izin notifikasi ditolak oleh pengguna")
+                  }
+              }
+
+              // File Chooser for camera & gallery uploads
               private val fileChooserLauncher = registerForActivityResult(
                   ActivityResultContracts.StartActivityForResult()
               ) { result ->
@@ -481,23 +644,117 @@ jobs:
                   super.onCreate(savedInstanceState)
                   setContentView(R.layout.activity_main)
 
-                  try {
-                      val statusColor = android.graphics.Color.parseColor("$RAW_STATUS_BAR_COLOR")
-                      val navColor = android.graphics.Color.parseColor("$RAW_NAV_BAR_COLOR")
-                      window.statusBarColor = statusColor
-                      window.navigationBarColor = navColor
-                      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                          val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(statusColor)
-                          if (luminance > 0.5) {
-                              @Suppress("DEPRECATION")
-                              window.decorView.systemUiVisibility = window.decorView.systemUiVisibility or android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
-                          }
-                      }
-                  } catch (e: Exception) {}
+                  setupSystemBars()
+                  setupNotificationChannel()
+                  requestNotificationPermission()
+                  setupFCM()
 
                   webView = findViewById(R.id.webView)
                   swipeRefresh = findViewById(R.id.swipeRefresh)
                   progressBar = findViewById(R.id.progressBar)
+
+                  setupWebView()
+                  setupSwipeRefresh()
+                  setupBackNavigation()
+                  handleNotificationIntent(intent)
+
+                  ${splashDismissKt}
+
+                  val initialUrl = intent.getStringExtra("target_url") ?: getString(R.string.target_url)
+                  webView.loadUrl(initialUrl)
+              }
+
+              override fun onNewIntent(intent: Intent) {
+                  super.onNewIntent(intent)
+                  handleNotificationIntent(intent)
+              }
+
+              private fun handleNotificationIntent(intent: Intent?) {
+                  val pushUrl = intent?.getStringExtra("target_url")
+                  if (!pushUrl.isNullOrEmpty() && ::webView.isInitialized) {
+                      webView.loadUrl(pushUrl)
+                  }
+              }
+
+              private fun setupSystemBars() {
+                  try {
+                      val statusColor = Color.parseColor("$RAW_STATUS_BAR_COLOR")
+                      val navColor = Color.parseColor("$RAW_NAV_BAR_COLOR")
+                      window.statusBarColor = statusColor
+                      window.navigationBarColor = navColor
+
+                      val windowInsetsController = WindowInsetsControllerCompat(window, window.decorView)
+                      val isLightStatus = ColorUtils.calculateLuminance(statusColor) > 0.5
+                      val isLightNav = ColorUtils.calculateLuminance(navColor) > 0.5
+                      windowInsetsController.isAppearanceLightStatusBars = isLightStatus
+                      windowInsetsController.isAppearanceLightNavigationBars = isLightNav
+                  } catch (e: Exception) {
+                      Log.e("MainActivity", "Error setting system bar colors", e)
+                  }
+              }
+
+              private fun setupNotificationChannel() {
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      try {
+                          val channelId = "${channelId}"
+                          val channelName = "${channelName}"
+                          val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                          val channel = NotificationChannel(
+                              channelId,
+                              channelName,
+                              NotificationManager.IMPORTANCE_HIGH
+                          ).apply {
+                              description = "Saluran resmi notifikasi \${getString(R.string.app_name)}"
+                              enableLights(true)
+                              enableVibration(true)
+                          }
+                          manager.createNotificationChannel(channel)
+                      } catch (e: Exception) {
+                          Log.e("MainActivity", "Error creating notification channel", e)
+                      }
+                  }
+              }
+
+              private fun requestNotificationPermission() {
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                      if (ContextCompat.checkSelfPermission(
+                              this,
+                              Manifest.permission.POST_NOTIFICATIONS
+                          ) != PackageManager.PERMISSION_GRANTED
+                      ) {
+                          notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                      }
+                  }
+              }
+
+              private fun setupFCM() {
+                  try {
+                      FirebaseMessaging.getInstance().subscribeToTopic("all_users")
+                          .addOnCompleteListener { task ->
+                              if (task.isSuccessful) {
+                                  Log.d("FCM", "Berhasil berlangganan topik: all_users")
+                              }
+                          }
+
+                      FirebaseMessaging.getInstance().token
+                          .addOnCompleteListener { task ->
+                              if (task.isSuccessful) {
+                                  val token = task.result
+                                  Log.d("FCM", "FCM Registration Token: \$token")
+                                  val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+                                  prefs.edit().putString("fcm_token", token).apply()
+                              }
+                          }
+                  } catch (e: Exception) {
+                      Log.w("FCM", "FCM setup status: \${e.message}")
+                  }
+              }
+
+              @SuppressLint("SetJavaScriptEnabled")
+              private fun setupWebView() {
+                  val cookieManager = CookieManager.getInstance()
+                  cookieManager.setAcceptCookie(true)
+                  cookieManager.setAcceptThirdPartyCookies(webView, true)
 
                   webView.settings.apply {
                       javaScriptEnabled = true
@@ -510,15 +767,61 @@ jobs:
                       setSupportZoom(true)
                       builtInZoomControls = true
                       displayZoomControls = false
+                      mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                      cacheMode = WebSettings.LOAD_DEFAULT
+                      mediaPlaybackRequiresUserGesture = false
+                      javaScriptCanOpenWindowsAutomatically = true
+                      val defaultUa = userAgentString
+                      userAgentString = "$defaultUa Web2App/1.0"
                   }
 
                   webView.webViewClient = object : WebViewClient() {
                       override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                           progressBar.visibility = View.VISIBLE
                       }
+
                       override fun onPageFinished(view: WebView?, url: String?) {
                           progressBar.visibility = View.GONE
                           swipeRefresh.isRefreshing = false
+                      }
+
+                      override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                          val url = request?.url?.toString() ?: return false
+                          val targetHost = Uri.parse(getString(R.string.target_url)).host
+
+                          if (url.startsWith("tel:") || url.startsWith("mailto:") || 
+                              url.startsWith("whatsapp:") || url.startsWith("sms:") ||
+                              url.startsWith("geo:") || url.startsWith("intent:") ||
+                              url.startsWith("market:")) {
+                              try {
+                                  val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                  startActivity(intent)
+                                  return true
+                              } catch (e: Exception) {
+                                  Toast.makeText(this@MainActivity, "Aplikasi pendukung tidak terpasang di perangkat", Toast.LENGTH_SHORT).show()
+                                  return true
+                              }
+                          }
+
+                          val uriHost = Uri.parse(url).host
+                          if (uriHost != null && targetHost != null && uriHost.contains(targetHost)) {
+                              return false
+                          }
+
+                          try {
+                              val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                              startActivity(browserIntent)
+                              return true
+                          } catch (e: Exception) {
+                              return false
+                          }
+                      }
+
+                      override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+                          if (request?.isForMainFrame == true) {
+                              progressBar.visibility = View.GONE
+                              swipeRefresh.isRefreshing = false
+                          }
                       }
                   }
 
@@ -556,7 +859,9 @@ jobs:
                           callback?.invoke(origin, true, false)
                       }
                   }
+              }
 
+              private fun setupSwipeRefresh() {
                   val pullRefreshEnabled = resources.getBoolean(R.bool.pull_to_refresh_enabled)
                   swipeRefresh.isEnabled = pullRefreshEnabled
                   if (pullRefreshEnabled) {
@@ -564,7 +869,9 @@ jobs:
                           webView.reload()
                       }
                   }
+              }
 
+              private fun setupBackNavigation() {
                   onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
                       override fun handleOnBackPressed() {
                           if (webView.canGoBack()) {
@@ -574,11 +881,6 @@ jobs:
                           }
                       }
                   })
-
-                  ${splashDismissKt}
-
-                  val url = getString(R.string.target_url)
-                  webView.loadUrl(url)
               }
           }
           EOF
@@ -586,6 +888,8 @@ jobs:
       - name: Build Android APK
         working-directory: android
         run: |
+          export ANDROID_HOME=/usr/local/lib/android/sdk
+          export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
           gradle assembleDebug --no-daemon --stacktrace
 
       - name: Upload Real APK Artifact
@@ -651,14 +955,14 @@ export const LATEST_WORKFLOW_YML = generateWorkflowYml({
     privacyPolicyUrl: '',
   },
   firebase: {
-    enabled: false,
-    projectId: '',
-    appId: '',
-    apiKey: '',
-    messagingSenderId: '',
+    enabled: true,
+    projectId: 'web2app-fcm-project',
+    appId: '1:982347102938:android:72834b92c81d',
+    apiKey: 'AIzaSyD-X92kL10mNq947-fcmKeyDemo',
+    messagingSenderId: '982347102938',
     serverKey: '',
-    channelId: 'default_channel',
-    channelName: 'Notifikasi',
+    channelId: 'promo_and_updates',
+    channelName: 'Notifikasi & Info Promo',
     soundEnabled: true,
     vibrateEnabled: true,
     badgeEnabled: true,

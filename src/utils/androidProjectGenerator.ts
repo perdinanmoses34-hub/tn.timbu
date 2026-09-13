@@ -120,11 +120,19 @@ ${firebaseServiceDecl}
 export function generateMainActivityKt(config: AppConfig): string {
   return `package ${config.packageName}
 
+import android.Manifest
 import android.annotation.SuppressLint
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.webkit.*
 import android.widget.ProgressBar
@@ -132,7 +140,11 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.ColorUtils
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+${config.firebase?.enabled ? 'import com.google.firebase.messaging.FirebaseMessaging' : ''}
 
 class MainActivity : AppCompatActivity() {
 
@@ -140,6 +152,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var swipeRefreshLayout: SwipeRefreshLayout
     private lateinit var progressBar: ProgressBar
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
+
+    // Runtime Permission for Push Notifications (Android 13+ / API 33+)
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            Log.d("MainActivity", "Izin notifikasi disetujui")
+        } else {
+            Log.w("MainActivity", "Izin notifikasi ditolak oleh pengguna")
+        }
+    }
 
     private val fileChooserLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -166,6 +189,11 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        setupSystemBars()
+        setupNotificationChannel()
+        requestNotificationPermission()
+        ${config.firebase?.enabled ? 'setupFCM()' : ''}
+
         webView = findViewById(R.id.webView)
         swipeRefreshLayout = findViewById(R.id.swipeRefresh)
         progressBar = findViewById(R.id.progressBar)
@@ -173,10 +201,97 @@ class MainActivity : AppCompatActivity() {
         setupWebView()
         setupBackPressed()
         setupSwipeRefresh()
+        handleIntent(intent)
 
-        val targetUrl = getString(R.string.target_url)
+        val targetUrl = intent.getStringExtra("target_url") ?: getString(R.string.target_url)
         webView.loadUrl(targetUrl)
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        val pushUrl = intent?.getStringExtra("target_url")
+        if (!pushUrl.isNullOrEmpty() && ::webView.isInitialized) {
+            webView.loadUrl(pushUrl)
+        }
+    }
+
+    private fun setupSystemBars() {
+        try {
+            val statusColor = Color.parseColor("${config.statusBarColor || config.themeColor}")
+            val navColor = Color.parseColor("${config.navBarColor || '#0F172A'}")
+            window.statusBarColor = statusColor
+            window.navigationBarColor = navColor
+
+            val windowInsetsController = WindowInsetsControllerCompat(window, window.decorView)
+            val isLightStatus = ColorUtils.calculateLuminance(statusColor) > 0.5
+            val isLightNav = ColorUtils.calculateLuminance(navColor) > 0.5
+            windowInsetsController.isAppearanceLightStatusBars = isLightStatus
+            windowInsetsController.isAppearanceLightNavigationBars = isLightNav
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error setting system bar colors", e)
+        }
+    }
+
+    private fun setupNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                val channelId = "${config.firebase?.channelId || 'promo_and_updates'}"
+                val channelName = "${config.firebase?.channelName || 'Notifikasi & Info Promo'}"
+                val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                val channel = NotificationChannel(
+                    channelId,
+                    channelName,
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "Saluran resmi notifikasi \${getString(R.string.app_name)}"
+                    enableLights(true)
+                    enableVibration(true)
+                }
+                manager.createNotificationChannel(channel)
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Error creating notification channel", e)
+            }
+        }
+    }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
+    ${config.firebase?.enabled ? `private fun setupFCM() {
+        try {
+            FirebaseMessaging.getInstance().subscribeToTopic("all_users")
+                .addOnCompleteListener { task ->
+                    if (task.isSuccessful) {
+                        Log.d("FCM", "Berhasil berlangganan topik: all_users")
+                    }
+                }
+
+            FirebaseMessaging.getInstance().token
+                .addOnCompleteListener { task ->
+                    if (task.isSuccessful) {
+                        val token = task.result
+                        Log.d("FCM", "FCM Registration Token: $token")
+                        val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+                        prefs.edit().putString("fcm_token", token).apply()
+                    }
+                }
+        } catch (e: Exception) {
+            Log.w("FCM", "FCM setup status: \${e.message}")
+        }
+    }` : ''}
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun setupWebView() {
@@ -630,7 +745,9 @@ export async function createFullProjectZip(config: AppConfig): Promise<Blob> {
   zip.file("app/src/main/res/layout/activity_main.xml", `<?xml version="1.0" encoding="utf-8"?>
 <androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="true"
+    android:background="@color/status_bar">
 
     <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
         android:id="@+id/swipeRefresh"

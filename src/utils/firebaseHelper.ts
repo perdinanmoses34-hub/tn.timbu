@@ -4,11 +4,20 @@ import { AppConfig } from '../types';
  * Generates an authentic google-services.json for the Android app
  */
 export function generateGoogleServicesJson(config: AppConfig): string {
+  if (config.firebase.rawGoogleServicesJson?.trim()) {
+    try {
+      const parsed = JSON.parse(config.firebase.rawGoogleServicesJson);
+      return JSON.stringify(parsed, null, 2);
+    } catch {
+      // If invalid JSON, fallback to generated
+    }
+  }
+
   const projectNumber = config.firebase.messagingSenderId || '982347102938';
   const projectId = config.firebase.projectId || 'app-push-project';
   const appId = config.firebase.appId || `1:${projectNumber}:android:72834b92c81d`;
   const apiKey = config.firebase.apiKey || 'AIzaSyD-X92kL10mNq947-fcmKeyDemo';
-  const sha1 = config.keystore.sha1.replace(/:/g, '').toLowerCase();
+  const sha1 = config.keystore.sha1 ? config.keystore.sha1.replace(/:/g, '').toLowerCase() : '';
 
   const data = {
     project_info: {
@@ -58,6 +67,44 @@ export function generateGoogleServicesJson(config: AppConfig): string {
   };
 
   return JSON.stringify(data, null, 2);
+}
+
+/**
+ * Parses an uploaded google-services.json and extracts configuration fields
+ */
+export function parseGoogleServicesJson(rawJson: string): {
+  success: boolean;
+  projectId?: string;
+  messagingSenderId?: string;
+  appId?: string;
+  apiKey?: string;
+  packageName?: string;
+  error?: string;
+} {
+  try {
+    const data = JSON.parse(rawJson);
+    const projectId = data.project_info?.project_id || '';
+    const messagingSenderId = data.project_info?.project_number || '';
+    const client = data.client?.[0];
+    const appId = client?.client_info?.mobilesdk_app_id || '';
+    const packageName = client?.client_info?.android_client_info?.package_name || '';
+    const apiKey = client?.api_key?.[0]?.current_key || '';
+
+    if (!projectId && !messagingSenderId && !appId) {
+      return { success: false, error: 'Format berkas google-services.json tidak valid atau tidak memiliki project_info.' };
+    }
+
+    return {
+      success: true,
+      projectId,
+      messagingSenderId,
+      appId,
+      apiKey,
+      packageName: packageName || undefined,
+    };
+  } catch (e: any) {
+    return { success: false, error: 'Berkas bukan format JSON yang valid.' };
+  }
 }
 
 /**

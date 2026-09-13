@@ -40,7 +40,8 @@ import {
   generateGoogleServicesJson, 
   generateFcmPayload, 
   generateNodeJsSnippet, 
-  generateCurlSnippet 
+  generateCurlSnippet,
+  parseGoogleServicesJson
 } from '../utils/firebaseHelper';
 
 interface ConfigTabsProps {
@@ -150,6 +151,51 @@ export const ConfigTabs: React.FC<ConfigTabsProps> = ({ config, onChangeConfig, 
   const [testBody, setTestBody] = useState('Dapatkan diskon potongan harga hingga 50% untuk pesanan pertama Anda.');
   const [testUrl, setTestUrl] = useState('');
   const [sentSuccess, setSentSuccess] = useState(false);
+  const [googleServicesUploadMessage, setGoogleServicesUploadMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Handle Upload google-services.json
+  const handleGoogleServicesUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setGoogleServicesUploadMessage(null);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      const parsed = parseGoogleServicesJson(content);
+      if (parsed.success) {
+        onChangeConfig({
+          packageName: parsed.packageName || config.packageName,
+          firebase: {
+            ...config.firebase,
+            enabled: true,
+            projectId: parsed.projectId || config.firebase.projectId,
+            messagingSenderId: parsed.messagingSenderId || config.firebase.messagingSenderId,
+            appId: parsed.appId || config.firebase.appId,
+            apiKey: parsed.apiKey || config.firebase.apiKey,
+            rawGoogleServicesJson: content,
+          }
+        });
+        setGoogleServicesUploadMessage({
+          type: 'success',
+          text: `Berhasil memuat berkas google-services.json! (Project: ${parsed.projectId}, Package: ${parsed.packageName || config.packageName})`
+        });
+      } else {
+        setGoogleServicesUploadMessage({
+          type: 'error',
+          text: parsed.error || 'Gagal memproses berkas google-services.json'
+        });
+      }
+    };
+    reader.onerror = () => {
+      setGoogleServicesUploadMessage({
+        type: 'error',
+        text: 'Gagal membaca berkas dari perangkat.'
+      });
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
 
   // Handle Image File Upload for Icon
   const handleIconFileUpload = (file: File) => {
@@ -1443,10 +1489,71 @@ export const ConfigTabs: React.FC<ConfigTabsProps> = ({ config, onChangeConfig, 
 
             {/* FIREBASE CREDENTIALS & NOTIFICATION CHANNEL */}
             <div className="space-y-4">
-              <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                <Settings className="w-4 h-4 text-blue-400" />
-                Konfigurasi Proyek Firebase (FCM)
-              </h4>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  <Settings className="w-4 h-4 text-blue-400" />
+                  Konfigurasi Proyek Firebase (FCM)
+                </h4>
+                <span className="text-[11px] text-slate-400">
+                  Dibutuhkan agar ponsel Anda terdaftar resmi di Google Firebase
+                </span>
+              </div>
+
+              {/* Upload google-services.json quick import */}
+              <div className="p-4 rounded-xl bg-blue-950/20 border border-blue-800/40 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h5 className="text-xs font-bold text-white flex items-center gap-2">
+                      <Upload className="w-4 h-4 text-blue-400" />
+                      Punya Berkas google-services.json Asli?
+                    </h5>
+                    <p className="text-[11px] text-slate-300 mt-0.5">
+                      Unggah file <code>google-services.json</code> Anda dari Firebase Console agar Project ID, Sender ID, App ID, dan Package Name otomatis terisi 100% tepat.
+                    </p>
+                  </div>
+                  <label className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs cursor-pointer flex items-center gap-2 shrink-0 transition-colors shadow-sm">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Unggah google-services.json</span>
+                    <input
+                      type="file"
+                      accept=".json"
+                      className="hidden"
+                      onChange={handleGoogleServicesUpload}
+                    />
+                  </label>
+                </div>
+
+                {googleServicesUploadMessage && (
+                  <div className={`p-2.5 rounded-lg text-xs flex items-center gap-2 ${
+                    googleServicesUploadMessage.type === 'success'
+                      ? 'bg-emerald-950/50 border border-emerald-500/40 text-emerald-300'
+                      : 'bg-red-950/50 border border-red-500/40 text-red-300'
+                  }`}>
+                    {googleServicesUploadMessage.type === 'success' ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                    )}
+                    <span>{googleServicesUploadMessage.text}</span>
+                  </div>
+                )}
+
+                {config.firebase.rawGoogleServicesJson && (
+                  <div className="flex items-center justify-between p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 text-xs">
+                    <span className="flex items-center gap-1.5 font-medium">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      Berkas google-services.json kustom aktif & siap dikompilasi ke APK
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onChangeConfig({ firebase: { ...config.firebase, rawGoogleServicesJson: undefined } })}
+                      className="text-[11px] text-red-400 hover:text-red-300 underline font-semibold cursor-pointer"
+                    >
+                      Reset ke Template Default
+                    </button>
+                  </div>
+                )}
+              </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
