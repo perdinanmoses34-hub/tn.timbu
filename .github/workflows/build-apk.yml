@@ -22,7 +22,7 @@ on:
       status_bar_color:
         description: 'Warna Status Bar'
         required: false
-        default: '#000000'
+        default: '#020203'
       nav_bar_color:
         description: 'Warna Navigation Bar'
         required: false
@@ -78,7 +78,7 @@ jobs:
             RAW_THEME_COLOR="#10B981"
           fi
           if [ -z "$RAW_STATUS_BAR_COLOR" ]; then
-            RAW_STATUS_BAR_COLOR="#000000"
+            RAW_STATUS_BAR_COLOR="#020203"
           fi
           if [ -z "$RAW_NAV_BAR_COLOR" ]; then
             RAW_NAV_BAR_COLOR="#0F172A"
@@ -329,7 +329,7 @@ jobs:
                       android:layout_width="wrap_content"
                       android:layout_height="wrap_content"
                       android:layout_marginTop="8dp"
-                      android:text="Welcome Monapa Puriala"
+                      android:text="Belanja Cepat & Mudah"
                       android:textColor="#94A3B8"
                       android:textSize="14sp" />
 
