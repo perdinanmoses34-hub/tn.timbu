@@ -66,12 +66,10 @@ export async function getRepoInfo(
   const url = `https://api.github.com/repos/${config.owner.trim()}/${config.repo.trim()}?_ts=${Date.now()}`;
   try {
     const res = await fetch(url, {
-      cache: 'no-store',
       headers: {
         Accept: 'application/vnd.github+json',
         ...(config.token ? { Authorization: `Bearer ${config.token.trim()}` } : {}),
         'X-GitHub-Api-Version': '2022-11-28',
-        'Cache-Control': 'no-cache',
       },
     });
     if (res.ok) {
@@ -138,8 +136,6 @@ export async function fetchAuthoritativeFileSha(
   const headers: Record<string, string> = {
     Accept: 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
-    'Cache-Control': 'no-cache, no-store, must-revalidate',
-    Pragma: 'no-cache',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 
@@ -149,7 +145,6 @@ export async function fetchAuthoritativeFileSha(
   try {
     const url = `https://api.github.com/repos/${config.owner.trim()}/${config.repo.trim()}/contents/${filePath}?ref=${encodeURIComponent(branch)}&_ts=${ts}`;
     const res = await fetch(url, {
-      cache: 'no-store',
       headers,
     });
     if (res.ok) {
@@ -167,7 +162,6 @@ export async function fetchAuthoritativeFileSha(
   try {
     const treeUrl = `https://api.github.com/repos/${config.owner.trim()}/${config.repo.trim()}/git/trees/${encodeURIComponent(branch)}?recursive=1&_ts=${ts}`;
     const treeRes = await fetch(treeUrl, {
-      cache: 'no-store',
       headers,
     });
     if (treeRes.ok) {
@@ -210,12 +204,10 @@ export async function checkWorkflowRegistration(
 
   try {
     const res = await fetch(url, {
-      cache: 'no-store',
       headers: {
         Accept: 'application/vnd.github+json',
         ...(config.token ? { Authorization: `Bearer ${config.token.trim()}` } : {}),
         'X-GitHub-Api-Version': '2022-11-28',
-        'Cache-Control': 'no-cache',
       },
     });
 
@@ -295,12 +287,11 @@ export async function syncWorkflowFileToRepo(
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const putRes = await fetch(putUrl, {
         method: 'PUT',
-        cache: 'no-store',
         headers: {
           Accept: 'application/vnd.github+json',
+          'Content-Type': 'application/json',
           Authorization: `Bearer ${config.token.trim()}`,
           'X-GitHub-Api-Version': '2022-11-28',
-          'Cache-Control': 'no-cache',
         },
         body: JSON.stringify({
           message: 'ci: configure build-apk.yml with workflow_dispatch and Android compiler',
@@ -491,6 +482,7 @@ export async function triggerCloudBuild(
       method: 'POST',
       headers: {
         Accept: 'application/vnd.github+json',
+        'Content-Type': 'application/json',
         Authorization: `Bearer ${config.token.trim()}`,
         'X-GitHub-Api-Version': '2022-11-28',
       },
@@ -617,12 +609,10 @@ export async function getLatestWorkflowRun(
 
   try {
     const response = await fetch(url, {
-      cache: 'no-store',
       headers: {
         Accept: 'application/vnd.github+json',
         ...(config.token ? { Authorization: `Bearer ${config.token.trim()}` } : {}),
         'X-GitHub-Api-Version': '2022-11-28',
-        'Cache-Control': 'no-cache',
       },
     });
 
@@ -653,12 +643,10 @@ export async function getRunArtifacts(
 
   try {
     const response = await fetch(url, {
-      cache: 'no-store',
       headers: {
         Accept: 'application/vnd.github+json',
         ...(config.token ? { Authorization: `Bearer ${config.token.trim()}` } : {}),
         'X-GitHub-Api-Version': '2022-11-28',
-        'Cache-Control': 'no-cache',
       },
     });
 
