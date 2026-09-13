@@ -84,6 +84,107 @@ export async function getRepoInfo(
 }
 
 /**
+ * Safely decodes base64 string containing UTF-8 characters.
+ */
+export function decodeBase64Utf8(base64: string): string {
+  try {
+    const clean = base64.replace(/\s/g, '');
+    const binary = atob(clean);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Extracts inputs declared under workflow_dispatch.inputs in a GitHub Actions YAML string.
+ */
+export function parseWorkflowInputsFromYaml(yamlText: string): string[] {
+  const inputs: string[] = [];
+  const dispatchMatch = yamlText.match(/workflow_dispatch\s*:\s*inputs\s*:([\s\S]*?)(?:\n\s{0,2}[a-zA-Z0-9_-]+\s*:|\n\s*jobs\s*:|$)/);
+  if (dispatchMatch && dispatchMatch[1]) {
+    const lines = dispatchMatch[1].split('\n');
+    for (const line of lines) {
+      const m = line.match(/^\s{4,8}([a-zA-Z0-9_-]+)\s*:/);
+      if (m && m[1]) {
+        const key = m[1];
+        if (!['description', 'required', 'default', 'type', 'options'].includes(key)) {
+          if (!inputs.includes(key)) {
+            inputs.push(key);
+          }
+        }
+      }
+    }
+  }
+  return inputs;
+}
+
+/**
+ * Checks if the workflow file exists in the repository on a specific branch and retrieves its content.
+ */
+export async function getWorkflowFileFromRepo(
+  config: GitHubConfig,
+  branch: string
+): Promise<{ exists: boolean; content?: string; sha?: string; error?: string }> {
+  const path = '.github/workflows/build-apk.yml';
+  const url = `https://api.github.com/repos/${config.owner.trim()}/${config.repo.trim()}/contents/${path}?ref=${branch}`;
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        ...(config.token ? { Authorization: `Bearer ${config.token.trim()}` } : {}),
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const content = data.content ? decodeBase64Utf8(data.content) : '';
+      return { exists: true, content, sha: data.sha };
+    }
+    if (res.status === 404) {
+      return { exists: false };
+    }
+    const errData = await res.json().catch(() => ({}));
+    return { exists: false, error: errData.message || `HTTP ${res.status}` };
+  } catch (err: any) {
+    return { exists: false, error: err?.message || 'Gagal menghubungi GitHub' };
+  }
+}
+
+/**
+ * Checks if GitHub Actions has registered build-apk.yml and whether it is active.
+ */
+export async function checkWorkflowRegistration(
+  config: GitHubConfig
+): Promise<{ registered: boolean; id?: number; state?: string; name?: string; error?: string }> {
+  const url = `https://api.github.com/repos/${config.owner.trim()}/${config.repo.trim()}/actions/workflows/build-apk.yml`;
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        ...(config.token ? { Authorization: `Bearer ${config.token.trim()}` } : {}),
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      return { registered: true, id: data.id, state: data.state, name: data.name };
+    }
+    return { registered: false };
+  } catch (err: any) {
+    return { registered: false, error: err?.message };
+  }
+}
+
+/**
  * Synchronizes the latest build-apk.yml workflow directly to the user's GitHub repository.
  */
 export async function syncWorkflowFileToRepo(
@@ -94,7 +195,7 @@ export async function syncWorkflowFileToRepo(
     return { success: false, message: 'Token GitHub belum diisi. Masukkan Personal Access Token Anda.' };
   }
 
-  // Auto-detect default branch if not specified or verify repo existence
+  // Auto-detect default branch if not specified
   let targetBranch = config.branch?.trim() || '';
   if (!targetBranch) {
     const info = await getRepoInfo(config);
@@ -178,7 +279,8 @@ export async function syncWorkflowFileToRepo(
 }
 
 /**
- * Dispatches the build-apk.yml workflow on GitHub Actions.
+ * Dispatches the build-apk.yml workflow on GitHub Actions with automatic input adaptation,
+ * smart branch detection, and graceful retries.
  */
 export async function triggerCloudBuild(
   config: GitHubConfig,
@@ -190,21 +292,47 @@ export async function triggerCloudBuild(
     status_bar_color?: string;
     nav_bar_color?: string;
   },
-  customWorkflowYml?: string
-): Promise<{ success: boolean; error?: string; branchUsed?: string }> {
-  let targetBranch = config.branch?.trim() || '';
-
-  // Auto-detect default branch if not set
-  if (!targetBranch) {
-    const info = await getRepoInfo(config);
-    targetBranch = info.defaultBranch || 'main';
+  customWorkflowYml?: string,
+  forceSyncWorkflow = false
+): Promise<{
+  success: boolean;
+  error?: string;
+  branchUsed?: string;
+  inputsDispatched?: Record<string, string>;
+  actionUrl?: string;
+}> {
+  if (!config.token.trim()) {
+    return {
+      success: false,
+      error: 'Token GitHub belum diisi. Masukkan Personal Access Token Anda.',
+    };
+  }
+  if (!config.owner.trim() || !config.repo.trim()) {
+    return {
+      success: false,
+      error: 'Nama pemilik atau repositori belum diisi.',
+    };
   }
 
-  // Ensure workflow file is synchronized to the repository before dispatching
-  if (config.token.trim()) {
+  // 1. Detect repository default branch
+  const repoInfo = await getRepoInfo(config);
+  let targetBranch = config.branch?.trim() || repoInfo.defaultBranch || 'main';
+
+  // 2. Check if the workflow file exists in repository
+  let fileInfo = await getWorkflowFileFromRepo(config, targetBranch);
+  if (!fileInfo.exists && targetBranch !== 'master' && (!config.branch || config.branch === 'main')) {
+    // Check if it exists on 'master' branch instead
+    const masterInfo = await getWorkflowFileFromRepo(config, 'master');
+    if (masterInfo.exists) {
+      targetBranch = 'master';
+      fileInfo = masterInfo;
+    }
+  }
+
+  // 3. Only sync if the file doesn't exist yet OR user explicitly requested force sync
+  if (!fileInfo.exists || forceSyncWorkflow) {
     const syncRes = await syncWorkflowFileToRepo({ ...config, branch: targetBranch }, customWorkflowYml);
     if (!syncRes.success) {
-      // If sync failed due to token permission or other error, notify user immediately
       return {
         success: false,
         error: `Gagal menyiapkan alur kerja di GitHub: ${syncRes.message}`,
@@ -213,12 +341,43 @@ export async function triggerCloudBuild(
     if (syncRes.branchUsed) {
       targetBranch = syncRes.branchUsed;
     }
+    // Give GitHub Actions 2.5 seconds to register the newly committed workflow
+    await new Promise((r) => setTimeout(r, 2500));
+    fileInfo = await getWorkflowFileFromRepo(config, targetBranch);
   }
 
-  const url = `https://api.github.com/repos/${config.owner.trim()}/${config.repo.trim()}/actions/workflows/build-apk.yml/dispatches`;
+  // 4. Inspect which inputs are actually declared in the workflow file on GitHub
+  let declaredInputs: string[] = [];
+  if (fileInfo.content) {
+    declaredInputs = parseWorkflowInputsFromYaml(fileInfo.content);
+  }
 
-  try {
-    const response = await fetch(url, {
+  // Build the dispatch inputs payload based strictly on declared inputs (or safe defaults)
+  let payloadInputs: Record<string, string> = {};
+  if (declaredInputs.length > 0) {
+    for (const key of declaredInputs) {
+      const val = (inputs as any)[key];
+      if (val !== undefined && val !== null && String(val).trim() !== '') {
+        payloadInputs[key] = String(val);
+      }
+    }
+  } else {
+    // If not detected, pass the 3 core inputs guaranteed in all workflows
+    payloadInputs = {
+      target_url: inputs.target_url,
+      app_name: (inputs as any).appName || inputs.app_name,
+      package_name: inputs.package_name,
+    };
+    if (inputs.theme_color) payloadInputs.theme_color = inputs.theme_color;
+    if (inputs.status_bar_color) payloadInputs.status_bar_color = inputs.status_bar_color;
+    if (inputs.nav_bar_color) payloadInputs.nav_bar_color = inputs.nav_bar_color;
+  }
+
+  const dispatchUrl = `https://api.github.com/repos/${config.owner.trim()}/${config.repo.trim()}/actions/workflows/build-apk.yml/dispatches`;
+
+  // Helper to execute dispatch HTTP request
+  const doDispatch = async (branch: string, inps: Record<string, string>) => {
+    return fetch(dispatchUrl, {
       method: 'POST',
       headers: {
         Accept: 'application/vnd.github+json',
@@ -226,39 +385,109 @@ export async function triggerCloudBuild(
         'X-GitHub-Api-Version': '2022-11-28',
       },
       body: JSON.stringify({
-        ref: targetBranch,
-        inputs,
+        ref: branch,
+        inputs: inps,
       }),
     });
+  };
 
+  try {
+    let response = await doDispatch(targetBranch, payloadInputs);
+
+    // If 204 No Content, dispatch succeeded!
     if (response.status === 204) {
-      return { success: true, branchUsed: targetBranch };
-    }
-
-    if (response.status === 401) {
-      return { success: false, error: 'Token GitHub tidak valid atau sudah kedaluwarsa. Periksa kembali token Anda.' };
-    }
-
-    if (response.status === 404) {
       return {
-        success: false,
-        error: `Repositori "${config.owner}/${config.repo}" atau alur kerja "build-apk.yml" tidak ditemukan pada branch "${targetBranch}". Pastikan nama repositori dan token sudah benar (memiliki izin "repo" dan "workflow").`,
+        success: true,
+        branchUsed: targetBranch,
+        inputsDispatched: payloadInputs,
+        actionUrl: `https://github.com/${config.owner.trim()}/${config.repo.trim()}/actions/workflows/build-apk.yml`,
       };
     }
 
-    const data = await response.json().catch(() => ({}));
-    const rawMsg: string = data.message || '';
-
-    if (rawMsg.includes("workflow_dispatch") || response.status === 422) {
+    if (response.status === 401) {
       return {
         success: false,
-        error: `Alur kerja "build-apk.yml" belum aktif di branch utama ("${targetBranch}") repositori "${config.owner}/${config.repo}". Hal ini biasanya terjadi jika Token GitHub Anda belum dicentang izin "workflow", atau berkas alur kerja belum pernah disinkronkan ke repositori.`,
+        error: 'Token GitHub tidak valid atau sudah kedaluwarsa. Periksa kembali token Anda.',
+      };
+    }
+
+    let errData = await response.json().catch(() => ({}));
+    let rawMsg: string = errData.message || '';
+
+    // Scenario A: GitHub rejected unexpected input(s) (e.g. theme_color removed by user)
+    if (response.status === 422 && rawMsg.includes('Unexpected input')) {
+      // Fallback: Retry with only the 3 universal core inputs
+      const coreInputs = {
+        target_url: inputs.target_url,
+        app_name: (inputs as any).appName || inputs.app_name,
+        package_name: inputs.package_name,
+      };
+      const retryRes = await doDispatch(targetBranch, coreInputs);
+      if (retryRes.status === 204) {
+        return {
+          success: true,
+          branchUsed: targetBranch,
+          inputsDispatched: coreInputs,
+          actionUrl: `https://github.com/${config.owner.trim()}/${config.repo.trim()}/actions/workflows/build-apk.yml`,
+        };
+      }
+      errData = await retryRes.json().catch(() => ({}));
+      rawMsg = errData.message || rawMsg;
+    }
+
+    // Scenario B: GitHub Actions is still indexing after recent sync or branch mismatch
+    if (
+      (response.status === 422 && rawMsg.includes('workflow_dispatch')) ||
+      response.status === 404
+    ) {
+      // Check alternative branch (e.g. if 'main' was used, check 'master')
+      const altBranch = targetBranch === 'main' ? 'master' : 'main';
+      const altRes = await doDispatch(altBranch, payloadInputs);
+      if (altRes.status === 204) {
+        return {
+          success: true,
+          branchUsed: altBranch,
+          inputsDispatched: payloadInputs,
+          actionUrl: `https://github.com/${config.owner.trim()}/${config.repo.trim()}/actions/workflows/build-apk.yml`,
+        };
+      }
+
+      // If still not indexed, wait 2 seconds and retry once more
+      await new Promise((r) => setTimeout(r, 2000));
+      const retryRes2 = await doDispatch(targetBranch, payloadInputs);
+      if (retryRes2.status === 204) {
+        return {
+          success: true,
+          branchUsed: targetBranch,
+          inputsDispatched: payloadInputs,
+          actionUrl: `https://github.com/${config.owner.trim()}/${config.repo.trim()}/actions/workflows/build-apk.yml`,
+        };
+      }
+      errData = await retryRes2.json().catch(() => ({}));
+      rawMsg = errData.message || rawMsg;
+    }
+
+    // Honest, specific error message directly from GitHub
+    if (response.status === 404) {
+      return {
+        success: false,
+        error: `Alur kerja "build-apk.yml" belum ditemukan di GitHub pada branch "${targetBranch}". Silakan klik tombol "Sinkronkan Workflow ke GitHub Sekarang" atau pastikan berkas .github/workflows/build-apk.yml ada di repositori Anda.`,
+        actionUrl: `https://github.com/${config.owner.trim()}/${config.repo.trim()}/actions`,
+      };
+    }
+
+    if (rawMsg.includes('workflow_dispatch')) {
+      return {
+        success: false,
+        error: `GitHub melaporkan: "${rawMsg}". Berkas alur kerja di branch "${targetBranch}" belum memiliki trigger 'workflow_dispatch:' atau masih dalam antrean indeks GitHub. Silakan buka halaman Actions di GitHub untuk menjalankannya.`,
+        actionUrl: `https://github.com/${config.owner.trim()}/${config.repo.trim()}/actions/workflows/build-apk.yml`,
       };
     }
 
     return {
       success: false,
-      error: rawMsg || `Gagal memulai kompilasi (HTTP ${response.status})`,
+      error: rawMsg ? `GitHub API: ${rawMsg}` : `Gagal memulai kompilasi (HTTP ${response.status})`,
+      actionUrl: `https://github.com/${config.owner.trim()}/${config.repo.trim()}/actions/workflows/build-apk.yml`,
     };
   } catch (err: any) {
     return {

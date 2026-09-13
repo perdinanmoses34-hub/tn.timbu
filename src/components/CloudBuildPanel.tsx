@@ -216,7 +216,7 @@ export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
   }, [activeRun?.id, activeRun?.status, ghConfig]);
 
   // Trigger Build via API
-  const handleStartCloudBuild = async () => {
+  const handleStartCloudBuild = async (forceSync = false) => {
     setErrorMessage(null);
     setArtifacts([]);
     setBuildDurationSeconds(0);
@@ -228,7 +228,7 @@ export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
     }
 
     setIsTriggering(true);
-    setPollingStatusText('Menyiapkan aset desain & menyinkronkan alur kerja ke GitHub Actions...');
+    setPollingStatusText(forceSync ? 'Menyinkronkan alur kerja ke GitHub Actions...' : 'Menghubungi GitHub Actions...');
 
     let iconBase64: string | undefined;
     try {
@@ -248,7 +248,8 @@ export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
         status_bar_color: config.statusBarColor,
         nav_bar_color: config.navBarColor,
       },
-      customWorkflowYml
+      customWorkflowYml,
+      forceSync
     );
 
     setIsTriggering(false);
@@ -257,6 +258,10 @@ export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
       setErrorMessage(result.error || 'Gagal memulai kompilasi.');
       setShowConfigSettings(true);
       return;
+    }
+
+    if (result.branchUsed && result.branchUsed !== ghConfig.branch) {
+      handleSaveConfig({ branch: result.branchUsed });
     }
 
     // Successfully dispatched, now wait 3 seconds and find the run
@@ -357,7 +362,7 @@ export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-[11px] font-semibold text-slate-400 mb-1">
                   Repositori GitHub (Owner / Repo):
@@ -378,9 +383,22 @@ export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
               </div>
 
               <div>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                  Branch Target:
+                </label>
+                <input
+                  type="text"
+                  value={ghConfig.branch || 'main'}
+                  onChange={(e) => handleSaveConfig({ branch: e.target.value.trim() })}
+                  placeholder="main atau master"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white font-mono focus:border-emerald-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-[11px] font-semibold text-slate-400">
-                    GitHub Personal Access Token:
+                    Personal Access Token:
                   </label>
                   <a
                     href="https://github.com/settings/tokens/new?scopes=repo,workflow&description=Web2App%20Studio%20Cloud%20Compiler"
@@ -388,7 +406,7 @@ export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
                     rel="noreferrer"
                     className="text-[10px] text-blue-400 hover:text-blue-300 font-semibold underline flex items-center gap-0.5"
                   >
-                    <span>Buat Token Baru</span>
+                    <span>Buat Token</span>
                     <ExternalLink className="w-2.5 h-2.5" />
                   </a>
                 </div>
@@ -537,13 +555,35 @@ export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
 
       {/* Error Message */}
       {errorMessage && (
-        <div className="p-3 bg-red-950/40 border border-red-500/40 rounded-xl flex items-start gap-2.5 text-xs text-red-200">
-          <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <span className="font-semibold">{errorMessage}</span>
-            <p className="text-[11px] text-slate-300">
-              Alternatif cepat: Anda juga bisa langsung membuka menu kompilasi manual di GitHub di bawah ini.
-            </p>
+        <div className="p-4 bg-red-950/40 border border-red-500/50 rounded-xl space-y-3 text-xs text-red-200 shadow-lg">
+          <div className="flex items-start gap-2.5">
+            <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <span className="font-semibold block text-sm text-red-300">{errorMessage}</span>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                Kompilasi juga dapat dipicu secara manual dengan membuka tab Actions di GitHub dan mengklik tombol <strong>"Run workflow"</strong> pada branch <strong>{ghConfig.branch || 'main'}</strong>.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 pt-1 border-t border-red-800/40">
+            <a
+              href={`https://github.com/${ghConfig.owner}/${ghConfig.repo}/actions/workflows/build-apk.yml`}
+              target="_blank"
+              rel="noreferrer"
+              className="py-2 px-3.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs flex items-center gap-1.5 transition-colors shadow"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Buka GitHub Actions ("Run workflow")</span>
+            </a>
+            <button
+              type="button"
+              onClick={() => handleStartCloudBuild(true)}
+              disabled={isTriggering}
+              className="py-2 px-3.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Paksa Sinkronkan Workflow &amp; Coba Lagi</span>
+            </button>
           </div>
         </div>
       )}
@@ -749,6 +789,17 @@ export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
               </button>
               <div className="text-center text-[11px] text-slate-400">
                 Server Ubuntu akan otomatis menjalankan <code>gradlew assembleDebug</code> untuk website: <span className="text-blue-400 font-mono">{config.url}</span>
+              </div>
+              <div className="flex items-center justify-center pt-1">
+                <a
+                  href={`https://github.com/${ghConfig.owner}/${ghConfig.repo}/actions/workflows/build-apk.yml`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[11px] text-slate-400 hover:text-blue-400 flex items-center gap-1.5 transition-colors underline"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  <span>Atau Buka Langsung di Halaman GitHub Actions ("Run workflow")</span>
+                </a>
               </div>
             </div>
           )}
