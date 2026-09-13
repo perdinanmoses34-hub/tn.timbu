@@ -5,10 +5,16 @@ import { AppConfig } from '../types';
  * faithfully matching all user configurations (App Icon, Colors, Splash, Permissions, Orientation).
  */
 export function generateWorkflowYml(config: AppConfig, iconBase64?: string): string {
-  const safeAppName = config.appName.replace(/'/g, "\\'").replace(/"/g, '\\"');
-  const safeTagline = (config.splash?.tagline || 'Selamat datang di aplikasi kami').replace(/'/g, "\\'").replace(/"/g, '\\"');
+  const safeAppName = (config.appName || 'Web2App').replace(/'/g, "\\'").replace(/"/g, '\\"');
+  const safeTagline = (config.splash?.tagline || 'Aplikasi Resmi Android').replace(/'/g, "\\'").replace(/"/g, '\\"');
   const safeUrl = config.url || 'https://tokoonline-store.com';
-  const orientationAttr = config.orientation !== 'unspecified' ? `android:screenOrientation="${config.orientation}"` : '';
+  const safeThemeColor = config.themeColor || '#2563EB';
+  const safeStatusBarColor = config.statusBarColor || '#1D4ED8';
+  const safeNavBarColor = config.navBarColor || '#0F172A';
+  const safeSplashBgColor = config.splash?.bgColor || config.statusBarColor || '#0F172A';
+  const orientationAttr = config.orientation && config.orientation !== 'unspecified' 
+    ? `android:screenOrientation="${config.orientation}"` 
+    : '';
 
   // Permission tags
   const permissionsList = [
@@ -17,12 +23,15 @@ export function generateWorkflowYml(config: AppConfig, iconBase64?: string): str
   ];
   if (config.permissions?.camera) {
     permissionsList.push('    <uses-permission android:name="android.permission.CAMERA" />');
+    permissionsList.push('    <uses-feature android:name="android.hardware.camera" android:required="false" />');
   }
   if (config.permissions?.location) {
     permissionsList.push('    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />');
     permissionsList.push('    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />');
   }
   if (config.permissions?.storage) {
+    permissionsList.push('    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />');
+    permissionsList.push('    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />');
     permissionsList.push('    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />');
   }
   if (config.permissions?.microphone) {
@@ -76,6 +85,7 @@ export function generateWorkflowYml(config: AppConfig, iconBase64?: string): str
               </LinearLayout>` : '';
 
   // Splash Kotlin dismiss block
+  const splashDuration = (config.splash?.durationSeconds || 2) * 1000;
   const splashDismissKt = config.splash?.enabled ? `
                   val splashOverlay = findViewById<View>(R.id.splashOverlay)
                   android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
@@ -83,12 +93,12 @@ export function generateWorkflowYml(config: AppConfig, iconBase64?: string): str
                           ?.alpha(0f)
                           ?.setDuration(400)
                           ?.withEndAction { splashOverlay.visibility = View.GONE }
-                  }, ${config.splash.durationSeconds * 1000}L)
+                  }, ${splashDuration}L)
   ` : '';
 
   // Icon writing script (if base64 provided)
   const iconScript = iconBase64 ? `
-          # Write Custom Icon from Web2App
+          # Write Custom Icon from Web2App Studio
           mkdir -p android/app/src/main/res/drawable
           mkdir -p android/app/src/main/res/mipmap-mdpi
           mkdir -p android/app/src/main/res/mipmap-hdpi
@@ -111,22 +121,22 @@ EOF
           cp android/app/src/main/res/drawable/ic_launcher.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png
           cp android/app/src/main/res/drawable/ic_launcher.png android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
 ` : `
-          # Fallback Vector Icon
+          # Fallback Vector Icon with App Theme Color
           mkdir -p android/app/src/main/res/drawable
+          mkdir -p android/app/src/main/res/mipmap-anydpi-v26
           cat << 'EOF' > android/app/src/main/res/drawable/ic_launcher.xml
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
               android:width="108dp"
               android:height="108dp"
               android:viewportWidth="108"
               android:viewportHeight="108">
-              <path android:fillColor="${config.themeColor}" android:pathData="M0,0h108v108h-108z"/>
+              <path android:fillColor="${safeThemeColor}" android:pathData="M0,0h108v108h-108z"/>
               <path android:fillColor="#FFFFFF" android:pathData="M35,24h38c6.075,0 11,4.925 11,11v38c0,6.075 -4.925,11 -11,11h-38c-6.075,0 -11,-4.925 -11,-11v-38c0,-6.075 4.925,-11 11,-11z"/>
-              <path android:fillColor="${config.themeColor}" android:pathData="M42,32h24c3.314,0 6,2.686 6,6v32c0,3.314 -2.686,6 -6,6h-24c-3.314,0 -6,-2.686 -6,-6v-32c0,-3.314 2.686,-6 6,-6z"/>
+              <path android:fillColor="${safeThemeColor}" android:pathData="M42,32h24c3.314,0 6,2.686 6,6v32c0,3.314 -2.686,6 -6,6h-24c-3.314,0 -6,-2.686 -6,-6v-32c0,-3.314 2.686,-6 6,-6z"/>
           </vector>
           EOF
-          mkdir -p android/app/src/main/res/mipmap-xxxhdpi
-          cp android/app/src/main/res/drawable/ic_launcher.xml android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.xml
-          cp android/app/src/main/res/drawable/ic_launcher.xml android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.xml
+          cp android/app/src/main/res/drawable/ic_launcher.xml android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+          cp android/app/src/main/res/drawable/ic_launcher.xml android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
 `;
 
   return `name: Build Real Android APK & AAB
@@ -145,7 +155,19 @@ on:
       package_name:
         description: 'Package Name / Application ID'
         required: true
-        default: '${config.packageName}'
+        default: '${config.packageName || 'com.web2app.app'}'
+      theme_color:
+        description: 'Warna Tema Utama'
+        required: false
+        default: '${safeThemeColor}'
+      status_bar_color:
+        description: 'Warna Status Bar'
+        required: false
+        default: '${safeStatusBarColor}'
+      nav_bar_color:
+        description: 'Warna Navigation Bar'
+        required: false
+        default: '${safeNavBarColor}'
 
 permissions:
   contents: write
@@ -181,6 +203,9 @@ jobs:
           RAW_TARGET_URL="\${{ github.event.inputs.target_url }}"
           RAW_APP_NAME="\${{ github.event.inputs.app_name }}"
           RAW_PKG_NAME="\${{ github.event.inputs.package_name }}"
+          RAW_THEME_COLOR="\${{ github.event.inputs.theme_color }}"
+          RAW_STATUS_BAR_COLOR="\${{ github.event.inputs.status_bar_color }}"
+          RAW_NAV_BAR_COLOR="\${{ github.event.inputs.nav_bar_color }}"
 
           if [ -z "$RAW_TARGET_URL" ]; then
             RAW_TARGET_URL="${safeUrl}"
@@ -189,7 +214,16 @@ jobs:
             RAW_APP_NAME="${safeAppName}"
           fi
           if [ -z "$RAW_PKG_NAME" ]; then
-            RAW_PKG_NAME="${config.packageName}"
+            RAW_PKG_NAME="${config.packageName || 'com.web2app.app'}"
+          fi
+          if [ -z "$RAW_THEME_COLOR" ]; then
+            RAW_THEME_COLOR="${safeThemeColor}"
+          fi
+          if [ -z "$RAW_STATUS_BAR_COLOR" ]; then
+            RAW_STATUS_BAR_COLOR="${safeStatusBarColor}"
+          fi
+          if [ -z "$RAW_NAV_BAR_COLOR" ]; then
+            RAW_NAV_BAR_COLOR="${safeNavBarColor}"
           fi
 
           # Sanitize package name (letters, digits, underscores, dots)
@@ -312,12 +346,12 @@ jobs:
           </resources>
           EOF
 
-          cat << 'EOF' > android/app/src/main/res/values/colors.xml
+          cat << EOF > android/app/src/main/res/values/colors.xml
           <resources>
-              <color name="primary">${config.themeColor || '#2563EB'}</color>
-              <color name="status_bar">${config.statusBarColor || '#1D4ED8'}</color>
-              <color name="nav_bar">${config.navBarColor || '#0F172A'}</color>
-              <color name="splash_bg">${config.splash?.bgColor || '#0F172A'}</color>
+              <color name="primary">$RAW_THEME_COLOR</color>
+              <color name="status_bar">$RAW_STATUS_BAR_COLOR</color>
+              <color name="nav_bar">$RAW_NAV_BAR_COLOR</color>
+              <color name="splash_bg">${safeSplashBgColor}</color>
           </resources>
           EOF
 
@@ -448,8 +482,17 @@ jobs:
                   setContentView(R.layout.activity_main)
 
                   try {
-                      window.statusBarColor = android.graphics.Color.parseColor("${config.statusBarColor || '#1D4ED8'}")
-                      window.navigationBarColor = android.graphics.Color.parseColor("${config.navBarColor || '#0F172A'}")
+                      val statusColor = android.graphics.Color.parseColor("$RAW_STATUS_BAR_COLOR")
+                      val navColor = android.graphics.Color.parseColor("$RAW_NAV_BAR_COLOR")
+                      window.statusBarColor = statusColor
+                      window.navigationBarColor = navColor
+                      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                          val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(statusColor)
+                          if (luminance > 0.5) {
+                              @Suppress("DEPRECATION")
+                              window.decorView.systemUiVisibility = window.decorView.systemUiVisibility or android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                          }
+                      }
                   } catch (e: Exception) {}
 
                   webView = findViewById(R.id.webView)

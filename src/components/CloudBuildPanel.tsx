@@ -22,6 +22,10 @@ import {
   Sparkles,
   GitBranch,
   Wrench,
+  Palette,
+  Code2,
+  X,
+  Layers,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { AppConfig } from '../types';
@@ -36,6 +40,8 @@ import {
   WorkflowRun,
   ArtifactItem,
 } from '../utils/githubCloudBuild';
+import { generateWorkflowYml } from '../utils/workflowTemplate';
+import { generateAppIconBase64 } from '../utils/iconCanvasGenerator';
 
 interface CloudBuildPanelProps {
   config: AppConfig;
@@ -56,6 +62,11 @@ export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
   const [pollingStatusText, setPollingStatusText] = useState('');
   const [copiedTokenHelper, setCopiedTokenHelper] = useState(false);
 
+  // Workflow code preview modal state
+  const [showWorkflowModal, setShowWorkflowModal] = useState(false);
+  const [generatedWorkflowCode, setGeneratedWorkflowCode] = useState('');
+  const [copiedCode, setCopiedCode] = useState(false);
+
   const timerRef = useRef<any>(null);
   const pollIntervalRef = useRef<any>(null);
 
@@ -64,6 +75,26 @@ export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
     const updated = { ...ghConfig, ...updates };
     setGhConfig(updated);
     saveGitHubConfig(updates);
+  };
+
+  // Preview generated workflow code matching user configuration
+  const handleOpenWorkflowPreview = async () => {
+    let iconBase64: string | undefined;
+    try {
+      iconBase64 = await generateAppIconBase64(config.icon, config.appName, 192);
+    } catch (e) {
+      console.warn('Gagal merender ikon base64:', e);
+    }
+    const code = generateWorkflowYml(config, iconBase64);
+    setGeneratedWorkflowCode(code);
+    setShowWorkflowModal(true);
+  };
+
+  const handleCopyCode = () => {
+    if (!generatedWorkflowCode) return;
+    navigator.clipboard.writeText(generatedWorkflowCode);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2000);
   };
 
   // Manual sync workflow file to GitHub
@@ -75,12 +106,21 @@ export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
     }
 
     setIsSyncingWorkflow(true);
-    setSyncStatusMessage('Sedang memperbarui alur kerja perbaikan Android ke repositori GitHub Anda...');
-    const res = await syncWorkflowFileToRepo(ghConfig);
+    setSyncStatusMessage('Sedang menyiapkan ikon dan menyinkronkan desain (warna tema, status bar, splash) ke repositori GitHub...');
+    
+    let iconBase64: string | undefined;
+    try {
+      iconBase64 = await generateAppIconBase64(config.icon, config.appName, 192);
+    } catch (e) {
+      console.warn('Gagal merender ikon base64:', e);
+    }
+    const customWorkflowYml = generateWorkflowYml(config, iconBase64);
+
+    const res = await syncWorkflowFileToRepo(ghConfig, customWorkflowYml);
     setIsSyncingWorkflow(false);
 
     if (res.success) {
-      setSyncStatusMessage('Alur kerja perbaikan (Java 17 + Gradle 8.4 + SDK 34) berhasil diperbarui di GitHub!');
+      setSyncStatusMessage('Alur kerja build-apk.yml berhasil diperbarui di GitHub sesuai warna tema, ikon, dan konfigurasi aplikasi Anda!');
       setTimeout(() => setSyncStatusMessage(null), 6000);
     } else {
       setErrorMessage(res.message);
@@ -152,13 +192,28 @@ export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
     }
 
     setIsTriggering(true);
-    setPollingStatusText('Mengirim instruksi kompilasi ke server GitHub Cloud...');
+    setPollingStatusText('Menyiapkan aset desain & menyinkronkan alur kerja ke GitHub Actions...');
 
-    const result = await triggerCloudBuild(ghConfig, {
-      target_url: config.url,
-      app_name: config.appName,
-      package_name: config.packageName,
-    });
+    let iconBase64: string | undefined;
+    try {
+      iconBase64 = await generateAppIconBase64(config.icon, config.appName, 192);
+    } catch (e) {
+      console.warn('Gagal merender ikon base64:', e);
+    }
+    const customWorkflowYml = generateWorkflowYml(config, iconBase64);
+
+    const result = await triggerCloudBuild(
+      ghConfig,
+      {
+        target_url: config.url,
+        app_name: config.appName,
+        package_name: config.packageName,
+        theme_color: config.themeColor,
+        status_bar_color: config.statusBarColor,
+        nav_bar_color: config.navBarColor,
+      },
+      customWorkflowYml
+    );
 
     setIsTriggering(false);
 
@@ -429,6 +484,101 @@ export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
         </div>
       )}
 
+      {/* APPLIED APP DESIGN & FEATURE SETTINGS CARD */}
+      <div className="p-3.5 bg-slate-900/90 border border-slate-800 rounded-xl space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+            <Palette className="w-4 h-4 text-blue-400" />
+            <span>Pengaturan Tampilan APK yang Diterapkan</span>
+          </span>
+          <button
+            type="button"
+            onClick={handleOpenWorkflowPreview}
+            className="text-[11px] text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+          >
+            <Code2 className="w-3.5 h-3.5" />
+            <span>Lihat / Salin Kode YAML</span>
+          </button>
+        </div>
+
+        {/* Color swatches & Core configs */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+          {/* Theme Color */}
+          <div className="p-2 rounded-lg bg-slate-950/70 border border-slate-800 flex items-center gap-2">
+            <span
+              className="w-4 h-4 rounded-full border border-white/20 shrink-0 shadow-sm"
+              style={{ backgroundColor: config.themeColor || '#2563EB' }}
+            />
+            <div className="min-w-0">
+              <div className="text-[10px] text-slate-400">Warna Tema</div>
+              <div className="font-mono text-slate-200 truncate">{config.themeColor || '#2563EB'}</div>
+            </div>
+          </div>
+
+          {/* Status Bar */}
+          <div className="p-2 rounded-lg bg-slate-950/70 border border-slate-800 flex items-center gap-2">
+            <span
+              className="w-4 h-4 rounded-full border border-white/20 shrink-0 shadow-sm"
+              style={{ backgroundColor: config.statusBarColor || '#1D4ED8' }}
+            />
+            <div className="min-w-0">
+              <div className="text-[10px] text-slate-400">Status Bar</div>
+              <div className="font-mono text-slate-200 truncate">{config.statusBarColor || '#1D4ED8'}</div>
+            </div>
+          </div>
+
+          {/* Navigation Bar */}
+          <div className="p-2 rounded-lg bg-slate-950/70 border border-slate-800 flex items-center gap-2">
+            <span
+              className="w-4 h-4 rounded-full border border-white/20 shrink-0 shadow-sm"
+              style={{ backgroundColor: config.navBarColor || '#0F172A' }}
+            />
+            <div className="min-w-0">
+              <div className="text-[10px] text-slate-400">Navigasi Bawah</div>
+              <div className="font-mono text-slate-200 truncate">{config.navBarColor || '#0F172A'}</div>
+            </div>
+          </div>
+
+          {/* Splash Screen */}
+          <div className="p-2 rounded-lg bg-slate-950/70 border border-slate-800 flex items-center gap-2">
+            <Smartphone className="w-4 h-4 text-blue-400 shrink-0" />
+            <div className="min-w-0">
+              <div className="text-[10px] text-slate-400">Splash Screen</div>
+              <div className="font-medium text-slate-200 truncate">
+                {config.splash?.enabled ? `${config.splash.durationSeconds} dtk (Aktif)` : 'Nonaktif'}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* URL, App Name, and Permission Badges */}
+        <div className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+          <div className="flex items-center gap-1.5 text-slate-300 min-w-0">
+            <span className="text-slate-400 text-[10px]">Aplikasi:</span>
+            <span className="font-semibold text-white truncate">{config.appName}</span>
+            <span className="text-slate-500 font-mono text-[10px]">({config.packageName})</span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1 text-[10px]">
+            {config.permissions?.camera && (
+              <span className="px-1.5 py-0.5 rounded bg-blue-950/60 text-blue-300 border border-blue-800/50">Kamera</span>
+            )}
+            {config.permissions?.location && (
+              <span className="px-1.5 py-0.5 rounded bg-blue-950/60 text-blue-300 border border-blue-800/50">Lokasi</span>
+            )}
+            {config.permissions?.storage && (
+              <span className="px-1.5 py-0.5 rounded bg-blue-950/60 text-blue-300 border border-blue-800/50">Upload File</span>
+            )}
+            {config.permissions?.notifications && (
+              <span className="px-1.5 py-0.5 rounded bg-blue-950/60 text-blue-300 border border-blue-800/50">Notifikasi</span>
+            )}
+            {config.permissions?.pullToRefresh && (
+              <span className="px-1.5 py-0.5 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-800/50">Tarik Muat Ulang</span>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* MAIN ACTION SECTION: Start Build or Show Live Progress */}
       {!activeRun || activeRun.status === 'completed' ? (
         <div className="space-y-3">
@@ -564,6 +714,74 @@ export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
           <ExternalLink className="w-3 h-3" />
         </a>
       </div>
+
+      {/* WORKFLOW CODE PREVIEW MODAL */}
+      {showWorkflowModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
+              <div className="flex items-center gap-2">
+                <Code2 className="w-5 h-5 text-blue-400" />
+                <div>
+                  <h3 className="text-sm font-bold text-white">
+                    Berkas Alur Kerja (.github/workflows/build-apk.yml)
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Disesuaikan otomatis dengan warna tema, ikon, splash screen, dan izin aplikasi Anda
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyCode}
+                  className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow"
+                >
+                  {copiedCode ? (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Tersalin!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Salin Semua Kode</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowWorkflowModal(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Code Body */}
+            <div className="p-4 overflow-y-auto flex-1 font-mono text-[11px] leading-relaxed bg-slate-950 text-slate-200 select-all">
+              <pre className="whitespace-pre-wrap break-all">{generatedWorkflowCode}</pre>
+            </div>
+
+            {/* Footer */}
+            <div className="p-3 border-t border-slate-800 bg-slate-900/80 flex items-center justify-between text-[11px] text-slate-400">
+              <span className="flex items-center gap-1 text-emerald-400">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                Otomatis disinkronkan ke GitHub saat kompilasi dijalankan.
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowWorkflowModal(false)}
+                className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium cursor-pointer"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

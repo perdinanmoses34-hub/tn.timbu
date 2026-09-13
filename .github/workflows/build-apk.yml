@@ -15,6 +15,18 @@ on:
         description: 'Package Name / Application ID'
         required: true
         default: 'com.web2app.app'
+      theme_color:
+        description: 'Warna Tema Utama'
+        required: false
+        default: '#2563EB'
+      status_bar_color:
+        description: 'Warna Status Bar'
+        required: false
+        default: '#1D4ED8'
+      nav_bar_color:
+        description: 'Warna Navigation Bar'
+        required: false
+        default: '#0F172A'
 
 permissions:
   contents: write
@@ -50,6 +62,9 @@ jobs:
           RAW_TARGET_URL="${{ github.event.inputs.target_url }}"
           RAW_APP_NAME="${{ github.event.inputs.app_name }}"
           RAW_PKG_NAME="${{ github.event.inputs.package_name }}"
+          RAW_THEME_COLOR="${{ github.event.inputs.theme_color }}"
+          RAW_STATUS_BAR_COLOR="${{ github.event.inputs.status_bar_color }}"
+          RAW_NAV_BAR_COLOR="${{ github.event.inputs.nav_bar_color }}"
 
           if [ -z "$RAW_TARGET_URL" ]; then
             RAW_TARGET_URL="https://tokoonline-store.com"
@@ -59,6 +74,15 @@ jobs:
           fi
           if [ -z "$RAW_PKG_NAME" ]; then
             RAW_PKG_NAME="com.web2app.app"
+          fi
+          if [ -z "$RAW_THEME_COLOR" ]; then
+            RAW_THEME_COLOR="#2563EB"
+          fi
+          if [ -z "$RAW_STATUS_BAR_COLOR" ]; then
+            RAW_STATUS_BAR_COLOR="#1D4ED8"
+          fi
+          if [ -z "$RAW_NAV_BAR_COLOR" ]; then
+            RAW_NAV_BAR_COLOR="#0F172A"
           fi
 
           # Sanitize package name (letters, digits, underscores, dots)
@@ -181,12 +205,12 @@ jobs:
           </resources>
           EOF
 
-          cat << 'EOF' > android/app/src/main/res/values/colors.xml
+          cat << EOF > android/app/src/main/res/values/colors.xml
           <resources>
-              <color name="primary">#2563EB</color>
-              <color name="status_bar">#1D4ED8</color>
-              <color name="nav_bar">#0F172A</color>
-              <color name="splash_bg">#0F172A</color>
+              <color name="primary">$RAW_THEME_COLOR</color>
+              <color name="status_bar">$RAW_STATUS_BAR_COLOR</color>
+              <color name="nav_bar">$RAW_NAV_BAR_COLOR</color>
+              <color name="splash_bg">$RAW_STATUS_BAR_COLOR</color>
           </resources>
           EOF
 
@@ -380,8 +404,17 @@ jobs:
                   setContentView(R.layout.activity_main)
 
                   try {
-                      window.statusBarColor = android.graphics.Color.parseColor("#1D4ED8")
-                      window.navigationBarColor = android.graphics.Color.parseColor("#0F172A")
+                      val statusColor = android.graphics.Color.parseColor("$RAW_STATUS_BAR_COLOR")
+                      val navColor = android.graphics.Color.parseColor("$RAW_NAV_BAR_COLOR")
+                      window.statusBarColor = statusColor
+                      window.navigationBarColor = navColor
+                      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                          val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(statusColor)
+                          if (luminance > 0.5) {
+                              @Suppress("DEPRECATION")
+                              window.decorView.systemUiVisibility = window.decorView.systemUiVisibility or android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                          }
+                      }
                   } catch (e: Exception) {}
 
                   webView = findViewById(R.id.webView)
