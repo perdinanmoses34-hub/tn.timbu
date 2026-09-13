@@ -66,6 +66,8 @@ export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
   const [showWorkflowModal, setShowWorkflowModal] = useState(false);
   const [generatedWorkflowCode, setGeneratedWorkflowCode] = useState('');
   const [copiedCode, setCopiedCode] = useState(false);
+  const [activeSyncTab, setActiveSyncTab] = useState<'auto' | 'manual'>('auto');
+  const [copiedManualCode, setCopiedManualCode] = useState(false);
 
   const timerRef = useRef<any>(null);
   const pollIntervalRef = useRef<any>(null);
@@ -75,6 +77,40 @@ export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
     const updated = { ...ghConfig, ...updates };
     setGhConfig(updated);
     saveGitHubConfig(updates);
+  };
+
+  // Download workflow yml file locally
+  const handleDownloadWorkflowYml = async () => {
+    let iconBase64: string | undefined;
+    try {
+      iconBase64 = await generateAppIconBase64(config.icon, config.appName, 192);
+    } catch (e) {
+      console.warn('Gagal merender ikon base64:', e);
+    }
+    const code = generateWorkflowYml(config, iconBase64);
+    const blob = new Blob([code], { type: 'text/yaml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'build-apk.yml';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // Copy manual workflow code
+  const handleCopyManualWorkflow = async () => {
+    let iconBase64: string | undefined;
+    try {
+      iconBase64 = await generateAppIconBase64(config.icon, config.appName, 192);
+    } catch (e) {
+      console.warn('Gagal merender ikon base64:', e);
+    }
+    const code = generateWorkflowYml(config, iconBase64);
+    navigator.clipboard.writeText(code);
+    setCopiedManualCode(true);
+    setTimeout(() => setCopiedManualCode(false), 2500);
   };
 
   // Preview generated workflow code matching user configuration
@@ -271,54 +307,74 @@ export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
         </div>
       </div>
 
-      {/* Configuration Box (Token & Repo) */}
-      <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-3.5 space-y-3">
-        <div className="flex items-center justify-between">
+      {/* Configuration & Sync Modes */}
+      <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-4 space-y-4 shadow-xl">
+        {/* Mode Selector Tabs */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
           <div className="flex items-center gap-2">
-            <Key className="w-4 h-4 text-blue-400" />
-            <span className="text-xs font-bold text-slate-200">Kredensial GitHub Cloud Compiler:</span>
-            {ghConfig.token ? (
-              <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-semibold bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/30">
-                <Check className="w-3 h-3" /> Token Tersimpan
-              </span>
-            ) : (
-              <span className="text-[10px] text-amber-400 font-semibold bg-amber-950/40 px-2 py-0.5 rounded border border-amber-500/30">
-                Belum Ada Token
-              </span>
-            )}
+            <GitBranch className="w-4 h-4 text-emerald-400" />
+            <span className="text-xs font-bold text-white uppercase tracking-wider">
+              Sinkronisasi Alur Kerja (build-apk.yml)
+            </span>
           </div>
-          <button
-            onClick={() => setShowConfigSettings(!showConfigSettings)}
-            className="text-xs text-blue-400 hover:text-blue-300 font-medium flex items-center gap-1 cursor-pointer"
-          >
-            <span>{showConfigSettings ? 'Sembunyikan Pengaturan' : 'Ubah Pengaturan'}</span>
-            {showConfigSettings ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </button>
+
+          <div className="flex rounded-lg bg-slate-900 p-1 border border-slate-800">
+            <button
+              type="button"
+              onClick={() => setActiveSyncTab('auto')}
+              className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${
+                activeSyncTab === 'auto'
+                  ? 'bg-emerald-600 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Mode 1: Otomatis (1-Klik)
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveSyncTab('manual')}
+              className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${
+                activeSyncTab === 'manual'
+                  ? 'bg-blue-600 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Mode 2: Manual Tanpa Token
+            </button>
+          </div>
         </div>
 
-        {/* Collapsible Config Settings Form */}
-        {showConfigSettings && (
-          <div className="pt-2 border-t border-slate-800 space-y-3">
+        {/* MODE 1: AUTOMATIC SYNC VIA GITHUB TOKEN */}
+        {activeSyncTab === 'auto' && (
+          <div className="space-y-3.5">
+            <div className="p-3 bg-emerald-950/30 border border-emerald-500/30 rounded-lg space-y-1.5">
+              <div className="flex items-center gap-2 text-xs font-bold text-emerald-300">
+                <Sparkles className="w-4 h-4 text-emerald-400" />
+                <span>Pembaruan Alur Kerja Otomatis ke Repositori</span>
+              </div>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                Tombol di bawah ini akan secara otomatis memperbarui berkas <code>.github/workflows/build-apk.yml</code> di repositori Anda agar menggunakan konfigurasi terbaru (warna tema, status bar, splash screen, ikon aplikasi Anda) dan memperbaiki masalah peringatan Node.js 20.
+              </p>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-[11px] font-semibold text-slate-400 mb-1">
                   Repositori GitHub (Owner / Repo):
                 </label>
-                <div className="flex items-center gap-1">
-                  <input
-                    type="text"
-                    value={`${ghConfig.owner}/${ghConfig.repo}`}
-                    onChange={(e) => {
-                      const parts = e.target.value.split('/');
-                      handleSaveConfig({
-                        owner: parts[0] || '',
-                        repo: parts[1] || '',
-                      });
-                    }}
-                    placeholder="username/nama-repo"
-                    className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white font-mono focus:border-blue-500 focus:outline-none"
-                  />
-                </div>
+                <input
+                  type="text"
+                  value={`${ghConfig.owner}/${ghConfig.repo}`}
+                  onChange={(e) => {
+                    const parts = e.target.value.split('/');
+                    handleSaveConfig({
+                      owner: parts[0] || '',
+                      repo: parts[1] || '',
+                    });
+                  }}
+                  placeholder="perdinanmoses34-hub/tn.timbu"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white font-mono focus:border-emerald-500 focus:outline-none"
+                />
               </div>
 
               <div>
@@ -332,7 +388,7 @@ export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
                     rel="noreferrer"
                     className="text-[10px] text-blue-400 hover:text-blue-300 font-semibold underline flex items-center gap-0.5"
                   >
-                    <span>Buat Token Baru (10 Detik)</span>
+                    <span>Buat Token Baru</span>
                     <ExternalLink className="w-2.5 h-2.5" />
                   </a>
                 </div>
@@ -341,83 +397,132 @@ export const CloudBuildPanel: React.FC<CloudBuildPanelProps> = ({ config }) => {
                   value={ghConfig.token}
                   onChange={(e) => handleSaveConfig({ token: e.target.value })}
                   placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                  className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white font-mono focus:border-blue-500 focus:outline-none"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white font-mono focus:border-emerald-500 focus:outline-none"
                 />
               </div>
             </div>
 
-            {/* Quick 3-Step Guide to Generate Token */}
-            <div className="p-3 bg-blue-950/30 border border-blue-500/30 rounded-lg space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-blue-300 flex items-center gap-1.5">
-                  <HelpCircle className="w-3.5 h-3.5" />
-                  Cara Mendapatkan Token GitHub (Gratis & 30 Detik):
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setShowTokenGuide(!showTokenGuide)}
-                  className="text-[10px] text-blue-400 hover:text-blue-300 underline cursor-pointer"
-                >
-                  {showTokenGuide ? 'Tutup Panduan' : 'Buka Panduan'}
-                </button>
-              </div>
-
-              {showTokenGuide && (
-                <div className="space-y-2 text-[11px] text-slate-300 pt-1 border-t border-blue-500/20">
-                  <ol className="list-decimal list-inside space-y-1.5 text-slate-300">
-                    <li>
-                      Klik tombol biru di bawah ini untuk membuka formulir token GitHub (izin <strong>repo</strong> dan <strong>workflow</strong> sudah otomatis dicentang).
-                    </li>
-                    <li>
-                      Gulir ke bagian paling bawah halaman GitHub, lalu klik tombol hijau <strong>"Generate token"</strong>.
-                    </li>
-                    <li>
-                      Salin (Copy) kode token yang berawalan <code>ghp_...</code>, lalu tempel (Paste) ke kolom Token di atas.
-                    </li>
-                  </ol>
-
-                  <a
-                    href="https://github.com/settings/tokens/new?scopes=repo,workflow&description=Web2App%20Studio%20Cloud%20Compiler"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-1 w-full py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors shadow"
-                  >
-                    <span>Buka Halaman Pembuatan Token GitHub (Otomatis Dicentang)</span>
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                </div>
-              )}
-            </div>
-
-            {/* Manual Sync Workflow Button */}
-            <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
-              <div className="text-[11px] text-slate-400">
-                Alur Kerja: <span className="text-emerald-400 font-semibold">Java 17 + Gradle 8.4 + SDK 34 (Stabil)</span>
-              </div>
+            {/* Prominent Sync Button */}
+            <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
               <button
                 type="button"
+                id="btn-sync-workflow-github"
                 onClick={handleSyncWorkflow}
                 disabled={isSyncingWorkflow || !ghConfig.token.trim()}
-                className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-blue-400 hover:text-blue-300 text-[11px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-40"
+                className="py-3 px-5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-500 text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 cursor-pointer disabled:opacity-40 transition-all active:scale-[0.99]"
               >
                 {isSyncingWorkflow ? (
                   <>
-                    <RefreshCw className="w-3 h-3 animate-spin" />
-                    <span>Menyinkronkan...</span>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Sedang Menyinkronkan ke GitHub...</span>
                   </>
                 ) : (
                   <>
-                    <Wrench className="w-3 h-3" />
-                    <span>Perbarui Berkas Alur Kerja di GitHub</span>
+                    <Sparkles className="w-4 h-4 text-amber-300" />
+                    <span>⚡ Sinkronkan Workflow ke GitHub Sekarang</span>
                   </>
                 )}
               </button>
+
+              <button
+                type="button"
+                onClick={() => setShowTokenGuide(!showTokenGuide)}
+                className="text-xs text-slate-400 hover:text-slate-200 underline text-center sm:text-right cursor-pointer"
+              >
+                {showTokenGuide ? 'Tutup Petunjuk Token' : 'Belum punya Token? Klik di sini'}
+              </button>
             </div>
 
-            <p className="text-[11px] text-slate-400 flex items-center gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span>Token hanya disimpan di peramban (browser) lokal Anda dan hanya digunakan untuk memicu GitHub Actions.</span>
-            </p>
+            {/* Quick 3-Step Guide to Generate Token */}
+            {showTokenGuide && (
+              <div className="p-3 bg-blue-950/30 border border-blue-500/30 rounded-lg space-y-2 text-[11px] text-slate-300">
+                <div className="font-bold text-blue-300 flex items-center gap-1.5">
+                  <HelpCircle className="w-3.5 h-3.5" />
+                  <span>Cara Cepat Membuat Token GitHub (30 Detik):</span>
+                </div>
+                <ol className="list-decimal list-inside space-y-1 text-slate-300">
+                  <li>
+                    Klik tautan <a href="https://github.com/settings/tokens/new?scopes=repo,workflow&description=Web2App%20Studio%20Cloud%20Compiler" target="_blank" rel="noreferrer" className="text-blue-400 underline font-semibold">Buat Token GitHub</a> (izin <strong>repo</strong> &amp; <strong>workflow</strong> sudah otomatis dicentang).
+                  </li>
+                  <li>
+                    Gulir ke paling bawah halaman GitHub, lalu klik tombol hijau <strong>"Generate token"</strong>.
+                  </li>
+                  <li>
+                    Salin kode token yang diawali <code>ghp_...</code>, lalu tempel ke kolom di atas dan klik tombol <strong>"Sinkronkan Workflow ke GitHub Sekarang"</strong>.
+                  </li>
+                </ol>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* MODE 2: MANUAL WITHOUT TOKEN (COPY OR DOWNLOAD YAML) */}
+        {activeSyncTab === 'manual' && (
+          <div className="space-y-3.5">
+            <div className="p-3 bg-blue-950/30 border border-blue-500/30 rounded-lg space-y-1.5">
+              <div className="flex items-center gap-2 text-xs font-bold text-blue-300">
+                <Code2 className="w-4 h-4 text-blue-400" />
+                <span>Salin atau Unduh Berkas Alur Kerja Tanpa Memerlukan Token</span>
+              </div>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                Jika Anda tidak ingin membuat token GitHub, Anda dapat menyalin kode alur kerja yang sudah disesuaikan dengan aplikasi Anda, lalu menempelkannya langsung ke editor GitHub Anda.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={handleCopyManualWorkflow}
+                className="py-2.5 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow cursor-pointer transition-colors"
+              >
+                {copiedManualCode ? (
+                  <>
+                    <Check className="w-4 h-4 text-emerald-300" />
+                    <span>Kode Berhasil Disalin!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" />
+                    <span>1. Salin Seluruh Kode YAML</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDownloadWorkflowYml}
+                className="py-2.5 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs flex items-center justify-center gap-2 border border-slate-700 cursor-pointer transition-colors"
+              >
+                <Download className="w-4 h-4 text-blue-400" />
+                <span>2. Unduh build-apk.yml</span>
+              </button>
+
+              <a
+                href={`https://github.com/${ghConfig.owner}/${ghConfig.repo}/edit/${ghConfig.branch || 'main'}/.github/workflows/build-apk.yml`}
+                target="_blank"
+                rel="noreferrer"
+                className="py-2.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow transition-colors"
+              >
+                <span>3. Buka File di GitHub</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
+
+            {/* Step-by-step Manual Guide */}
+            <div className="p-3 bg-slate-900 rounded-lg border border-slate-800 space-y-2 text-[11px] text-slate-300">
+              <span className="font-bold text-white flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                Langkah Cepat Memperbarui di GitHub (1 Menit):
+              </span>
+              <ol className="list-decimal list-inside space-y-1 text-slate-300">
+                <li>Klik tombol biru <strong>"1. Salin Seluruh Kode YAML"</strong> di atas.</li>
+                <li>Klik tombol hijau <strong>"3. Buka File di GitHub"</strong> (akan membuka halaman editor berkas di browser).</li>
+                <li>Di GitHub, tekan <code>Ctrl + A</code> untuk memilih seluruh teks lama, lalu tekan <code>Delete</code>.</li>
+                <li>Tekan <code>Ctrl + V</code> (Paste) untuk menempelkan kode alur kerja baru yang telah disalin.</li>
+                <li>Klik tombol hijau <strong>"Commit changes..."</strong> di pojok kanan atas GitHub.</li>
+                <li>Buka tab <strong>Actions</strong> di GitHub, pilih <strong>Build Real Android APK &amp; AAB</strong>, lalu klik <strong>Run workflow</strong>!</li>
+              </ol>
+            </div>
           </div>
         )}
       </div>

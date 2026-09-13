@@ -32,7 +32,8 @@ import {
   Grid,
   Info,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Cloud
 } from 'lucide-react';
 import { AppConfig, ArchitectureType, ScreenOrientation, NotificationItem } from '../types';
 import { generateFingerprint, generateAssetLinksJson } from '../utils/cryptoKeystore';
@@ -43,11 +44,17 @@ import {
   generateCurlSnippet,
   parseGoogleServicesJson
 } from '../utils/firebaseHelper';
+import { CloudBuildPanel } from './CloudBuildPanel';
+
+export type ConfigTabKey = 'info' | 'design' | 'features' | 'keystore' | 'firebase' | 'cloud';
 
 interface ConfigTabsProps {
   config: AppConfig;
   onChangeConfig: (newConfig: Partial<AppConfig>) => void;
   onSendTestNotification?: (notification: NotificationItem) => void;
+  activeTab?: ConfigTabKey;
+  onTabChange?: (tab: ConfigTabKey) => void;
+  onOpenPlayStoreGuide?: () => void;
 }
 
 export const ICON_CATEGORIES = [
@@ -131,8 +138,23 @@ const THEME_COLORS = [
   '#10B981', // Green
 ];
 
-export const ConfigTabs: React.FC<ConfigTabsProps> = ({ config, onChangeConfig, onSendTestNotification }) => {
-  const [activeTab, setActiveTab] = useState<'info' | 'design' | 'features' | 'keystore' | 'firebase'>('info');
+export const ConfigTabs: React.FC<ConfigTabsProps> = ({ 
+  config, 
+  onChangeConfig, 
+  onSendTestNotification,
+  activeTab: controlledActiveTab,
+  onTabChange,
+  onOpenPlayStoreGuide
+}) => {
+  const [internalActiveTab, setInternalActiveTab] = useState<ConfigTabKey>('info');
+  const activeTab = controlledActiveTab !== undefined ? controlledActiveTab : internalActiveTab;
+  const handleSelectTab = (tab: ConfigTabKey) => {
+    if (onTabChange) {
+      onTabChange(tab);
+    }
+    setInternalActiveTab(tab);
+  };
+
   const [copiedFingerprint, setCopiedFingerprint] = useState(false);
   const [copiedAssetLinks, setCopiedAssetLinks] = useState(false);
   const [copiedGoogleServices, setCopiedGoogleServices] = useState(false);
@@ -304,7 +326,8 @@ export const ConfigTabs: React.FC<ConfigTabsProps> = ({ config, onChangeConfig, 
       {/* Tab Navigation Header */}
       <div className="flex border-b border-slate-800 bg-slate-950/60 overflow-x-auto scrollbar-none">
         <button
-          onClick={() => setActiveTab('info')}
+          type="button"
+          onClick={() => handleSelectTab('info')}
           className={`flex items-center gap-2 px-4 py-3.5 text-xs sm:text-sm font-semibold border-b-2 transition-all whitespace-nowrap cursor-pointer ${
             activeTab === 'info'
               ? 'border-blue-500 text-blue-400 bg-blue-500/5'
@@ -316,7 +339,8 @@ export const ConfigTabs: React.FC<ConfigTabsProps> = ({ config, onChangeConfig, 
         </button>
 
         <button
-          onClick={() => setActiveTab('design')}
+          type="button"
+          onClick={() => handleSelectTab('design')}
           className={`flex items-center gap-2 px-4 py-3.5 text-xs sm:text-sm font-semibold border-b-2 transition-all whitespace-nowrap cursor-pointer ${
             activeTab === 'design'
               ? 'border-blue-500 text-blue-400 bg-blue-500/5'
@@ -328,7 +352,8 @@ export const ConfigTabs: React.FC<ConfigTabsProps> = ({ config, onChangeConfig, 
         </button>
 
         <button
-          onClick={() => setActiveTab('features')}
+          type="button"
+          onClick={() => handleSelectTab('features')}
           className={`flex items-center gap-2 px-4 py-3.5 text-xs sm:text-sm font-semibold border-b-2 transition-all whitespace-nowrap cursor-pointer ${
             activeTab === 'features'
               ? 'border-blue-500 text-blue-400 bg-blue-500/5'
@@ -340,7 +365,8 @@ export const ConfigTabs: React.FC<ConfigTabsProps> = ({ config, onChangeConfig, 
         </button>
 
         <button
-          onClick={() => setActiveTab('keystore')}
+          type="button"
+          onClick={() => handleSelectTab('keystore')}
           className={`flex items-center gap-2 px-4 py-3.5 text-xs sm:text-sm font-semibold border-b-2 transition-all whitespace-nowrap cursor-pointer ${
             activeTab === 'keystore'
               ? 'border-blue-500 text-blue-400 bg-blue-500/5'
@@ -352,7 +378,8 @@ export const ConfigTabs: React.FC<ConfigTabsProps> = ({ config, onChangeConfig, 
         </button>
 
         <button
-          onClick={() => setActiveTab('firebase')}
+          type="button"
+          onClick={() => handleSelectTab('firebase')}
           className={`flex items-center gap-2 px-4 py-3.5 text-xs sm:text-sm font-semibold border-b-2 transition-all whitespace-nowrap cursor-pointer ${
             activeTab === 'firebase'
               ? 'border-amber-500 text-amber-400 bg-amber-500/10'
@@ -363,6 +390,23 @@ export const ConfigTabs: React.FC<ConfigTabsProps> = ({ config, onChangeConfig, 
           <span>5. Firebase & Notifikasi</span>
           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
             FCM
+          </span>
+        </button>
+
+        <button
+          type="button"
+          id="tab-btn-cloud-build"
+          onClick={() => handleSelectTab('cloud')}
+          className={`flex items-center gap-2 px-4 py-3.5 text-xs sm:text-sm font-semibold border-b-2 transition-all whitespace-nowrap cursor-pointer ${
+            activeTab === 'cloud'
+              ? 'border-emerald-500 text-emerald-400 bg-emerald-500/10'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Cloud className="w-4 h-4 text-emerald-400" />
+          <span>6. Kompilasi Cloud (GitHub Actions)</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30 shadow-sm animate-pulse">
+            ⚡ APK Asli
           </span>
         </button>
       </div>
@@ -1032,7 +1076,7 @@ export const ConfigTabs: React.FC<ConfigTabsProps> = ({ config, onChangeConfig, 
                     </label>
                     <button
                       type="button"
-                      onClick={() => setActiveTab('firebase')}
+                      onClick={() => handleSelectTab('firebase')}
                       className="text-[11px] text-amber-400 hover:text-amber-300 font-semibold underline cursor-pointer"
                     >
                       Buka Pengaturan di Tab 5 (Firebase) ➜
@@ -1754,6 +1798,16 @@ export const ConfigTabs: React.FC<ConfigTabsProps> = ({ config, onChangeConfig, 
               </pre>
             </div>
 
+          </div>
+        )}
+
+        {/* TAB 6: KOMPILASI CLOUD (GITHUB ACTIONS) */}
+        {activeTab === 'cloud' && (
+          <div className="space-y-4">
+            <CloudBuildPanel
+              config={config}
+              onOpenPlayStoreGuide={onOpenPlayStoreGuide || (() => {})}
+            />
           </div>
         )}
       </div>

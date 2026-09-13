@@ -1,12 +1,13 @@
 import React from 'react';
-import { Smartphone, Sparkles, BookOpen, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { Smartphone, Sparkles, BookOpen, ShieldCheck, CheckCircle2, Cloud } from 'lucide-react';
 
 interface NavbarProps {
   onOpenGuide: () => void;
   onReset: () => void;
+  onOpenCloudBuild?: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ onOpenGuide, onReset }) => {
+export const Navbar: React.FC<NavbarProps> = ({ onOpenGuide, onReset, onOpenCloudBuild }) => {
   return (
     <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -33,10 +34,14 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenGuide, onReset }) => {
             <span>Target SDK 35 (Android 15)</span>
           </div>
 
-          <div className="hidden lg:flex items-center gap-2 px-3 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-xs font-medium text-emerald-400">
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>Format .AAB & .APK Siap Unggah</span>
-          </div>
+          <button
+            id="nav-btn-cloud-build"
+            onClick={onOpenCloudBuild}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 text-xs sm:text-sm font-semibold border border-emerald-500/40 cursor-pointer shadow-sm transition-colors"
+          >
+            <Cloud className="w-4 h-4 text-emerald-400" />
+            <span>Kompilasi Cloud (GitHub)</span>
+          </button>
 
           <button
             id="btn-open-play-guide"

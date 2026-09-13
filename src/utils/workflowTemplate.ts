@@ -314,13 +314,24 @@ jobs:
                   versionName = "${config.versionName || '1.0.0'}"
               }
 
+              signingConfigs {
+                  create("release") {
+                      storeFile = file("release.keystore")
+                      storePassword = "${config.keystore?.storePassword || 'Password123!'}"
+                      keyAlias = "${config.keystore?.alias || 'release-key'}"
+                      keyPassword = "${config.keystore?.keyPassword || 'Password123!'}"
+                  }
+              }
+
               buildTypes {
                   release {
                       isMinifyEnabled = false
+                      signingConfig = signingConfigs.getByName("release")
                       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
                   }
                   debug {
                       isDebuggable = true
+                      signingConfig = signingConfigs.getByName("release")
                   }
               }
               compileOptions {
@@ -385,14 +396,13 @@ jobs:
 ${googleServicesJson}
 EOF
 
-          # 7. Layout activity_main.xml (with fitsSystemWindows to protect status/nav bar visual alignment)
+          # 7. Layout activity_main.xml (clean full viewport)
           cat << 'EOF' > android/app/src/main/res/layout/activity_main.xml
           <?xml version="1.0" encoding="utf-8"?>
           <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
               android:layout_width="match_parent"
               android:layout_height="match_parent"
-              android:fitsSystemWindows="true"
-              android:background="@color/status_bar">
+              android:background="#FFFFFF">
 
               <androidx.swiperefreshlayout.widget.SwipeRefreshLayout 
                   android:id="@+id/swipeRefresh"
@@ -885,19 +895,44 @@ EOF
           }
           EOF
 
-      - name: Build Android APK
+          # Generate Keystore for signing Release APK and AAB
+          keytool -genkeypair -v \
+            -keystore android/app/release.keystore \
+            -alias "${config.keystore?.alias || 'release-key'}" \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass "${config.keystore?.storePassword || 'Password123!'}" \
+            -keypass "${config.keystore?.keyPassword || 'Password123!'}" \
+            -dname "CN=$SAFE_APP_NAME, O=Web2App, C=ID"
+
+      - name: Build Android Release APK & AAB Bundle
         working-directory: android
         run: |
           export ANDROID_HOME=/usr/local/lib/android/sdk
           export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
-          gradle assembleDebug --no-daemon --stacktrace
+          gradle assembleRelease bundleRelease assembleDebug --no-daemon --stacktrace
 
-      - name: Upload Real APK Artifact
+      - name: Upload Real Signed Release APK Artifact (~10 MB)
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-signed-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+
+      - name: Upload Google Play Store AAB Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-bundle-aab
+          path: android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: warn
+
+      - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-real-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+          if-no-files-found: warn
 `;
 }
 

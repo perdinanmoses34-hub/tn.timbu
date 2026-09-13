@@ -15,11 +15,12 @@ import {
   Sparkles,
   Layers,
   Code2,
-  Lock
+  Lock,
+  Cloud
 } from 'lucide-react';
 import { Navbar } from './components/Navbar';
 import { UrlInputSection } from './components/UrlInputSection';
-import { ConfigTabs } from './components/ConfigTabs';
+import { ConfigTabs, ConfigTabKey } from './components/ConfigTabs';
 import { DeviceSimulator } from './components/DeviceSimulator';
 import { BuildModal } from './components/BuildModal';
 import { PlayStoreGuideModal } from './components/PlayStoreGuideModal';
@@ -28,9 +29,18 @@ import { getInitialAppConfig, DEMO_PRESETS, PresetItem } from './data/defaults';
 
 export default function App() {
   const [config, setConfig] = useState<AppConfig>(() => getInitialAppConfig());
+  const [activeConfigTab, setActiveConfigTab] = useState<ConfigTabKey>('info');
   const [isBuildModalOpen, setIsBuildModalOpen] = useState(false);
   const [isGuideModalOpen, setIsGuideModalOpen] = useState(false);
   const [incomingNotification, setIncomingNotification] = useState<NotificationItem | null>(null);
+
+  const handleOpenCloudBuildTab = () => {
+    setActiveConfigTab('cloud');
+    const el = document.getElementById('config-tabs-wrapper');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
 
   // Handle configuration updates
   const handleChangeConfig = (newConfig: Partial<AppConfig>) => {
@@ -68,6 +78,7 @@ export default function App() {
       <Navbar 
         onOpenGuide={() => setIsGuideModalOpen(true)}
         onReset={handleReset}
+        onOpenCloudBuild={handleOpenCloudBuildTab}
       />
 
       {/* Main Container */}
@@ -104,11 +115,16 @@ export default function App() {
             </div>
 
             {/* Comprehensive Configuration Tabs */}
-            <ConfigTabs
-              config={config}
-              onChangeConfig={handleChangeConfig}
-              onSendTestNotification={(notif) => setIncomingNotification(notif)}
-            />
+            <div id="config-tabs-wrapper">
+              <ConfigTabs
+                config={config}
+                onChangeConfig={handleChangeConfig}
+                onSendTestNotification={(notif) => setIncomingNotification(notif)}
+                activeTab={activeConfigTab}
+                onTabChange={setActiveConfigTab}
+                onOpenPlayStoreGuide={() => setIsGuideModalOpen(true)}
+              />
+            </div>
 
             {/* Primary Action Button: Generate APK & AAB */}
             <div className="bg-gradient-to-r from-blue-900/40 via-indigo-900/30 to-slate-900 border border-blue-500/40 rounded-2xl p-5 shadow-2xl space-y-4">
@@ -138,15 +154,26 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Big CTA Button */}
-              <button
-                id="btn-generate-apk-aab"
-                onClick={() => setIsBuildModalOpen(true)}
-                className="w-full py-4 px-6 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-500 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2.5 shadow-xl shadow-blue-600/30 transition-all transform active:scale-[0.99] cursor-pointer"
-              >
-                <Rocket className="w-5 h-5 animate-pulse" />
-                <span>Mulai Konversi & Buat APK / AAB Otomatis</span>
-              </button>
+              {/* Action Buttons: Cloud Build Primary + Offline Modal Secondary */}
+              <div className="space-y-2.5">
+                <button
+                  id="btn-open-cloud-compiler"
+                  onClick={handleOpenCloudBuildTab}
+                  className="w-full py-4 px-6 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-blue-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2.5 shadow-xl shadow-emerald-600/30 transition-all transform active:scale-[0.99] cursor-pointer"
+                >
+                  <Cloud className="w-5 h-5 text-emerald-200 animate-pulse" />
+                  <span>Buka Tab 6: Kompilasi Cloud &amp; Sinkronkan ke GitHub (APK Asli)</span>
+                </button>
+
+                <button
+                  id="btn-generate-apk-aab"
+                  onClick={() => setIsBuildModalOpen(true)}
+                  className="w-full py-2.5 px-4 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer border border-slate-700"
+                >
+                  <Download className="w-4 h-4 text-blue-400" />
+                  <span>Atau Buat Bundel Proyek Android &amp; Simulator (.AAB &amp; ZIP)</span>
+                </button>
+              </div>
 
               {/* Security & Play Store Compliance Trust Badges */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-800/80 text-[11px] text-slate-400">
