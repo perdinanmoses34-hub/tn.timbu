@@ -21,26 +21,26 @@ export function generateWorkflowYml(config: AppConfig, iconBase64?: string): str
 
   // Permission tags
   const permissionsList = [
-    '    <uses-permission android:name="android.permission.INTERNET" />',
-    '    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />',
-    '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
-    '    <uses-permission android:name="android.permission.VIBRATE" />',
+    '          <uses-permission android:name="android.permission.INTERNET" />',
+    '          <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />',
+    '          <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
+    '          <uses-permission android:name="android.permission.VIBRATE" />',
   ];
   if (config.permissions?.camera) {
-    permissionsList.push('    <uses-permission android:name="android.permission.CAMERA" />');
-    permissionsList.push('    <uses-feature android:name="android.hardware.camera" android:required="false" />');
+    permissionsList.push('          <uses-permission android:name="android.permission.CAMERA" />');
+    permissionsList.push('          <uses-feature android:name="android.hardware.camera" android:required="false" />');
   }
   if (config.permissions?.location) {
-    permissionsList.push('    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />');
-    permissionsList.push('    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />');
+    permissionsList.push('          <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />');
+    permissionsList.push('          <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />');
   }
   if (config.permissions?.storage) {
-    permissionsList.push('    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />');
-    permissionsList.push('    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />');
-    permissionsList.push('    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />');
+    permissionsList.push('          <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />');
+    permissionsList.push('          <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />');
+    permissionsList.push('          <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />');
   }
   if (config.permissions?.microphone) {
-    permissionsList.push('    <uses-permission android:name="android.permission.RECORD_AUDIO" />');
+    permissionsList.push('          <uses-permission android:name="android.permission.RECORD_AUDIO" />');
   }
 
   // Splash Screen view block for activity_main.xml
@@ -108,9 +108,7 @@ export function generateWorkflowYml(config: AppConfig, iconBase64?: string): str
           mkdir -p android/app/src/main/res/mipmap-xxhdpi
           mkdir -p android/app/src/main/res/mipmap-xxxhdpi
 
-          cat << 'EOF' | base64 -d > android/app/src/main/res/drawable/ic_launcher.png
-${iconBase64}
-EOF
+          printf '%s' "${iconBase64}" | base64 -d > android/app/src/main/res/drawable/ic_launcher.png
           cp android/app/src/main/res/drawable/ic_launcher.png android/app/src/main/res/mipmap-mdpi/ic_launcher.png
           cp android/app/src/main/res/drawable/ic_launcher.png android/app/src/main/res/mipmap-hdpi/ic_launcher.png
           cp android/app/src/main/res/drawable/ic_launcher.png android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
@@ -142,6 +140,9 @@ EOF
 `;
 
   const googleServicesJson = generateGoogleServicesJson(config);
+  const googleServicesJsonBase64 = typeof Buffer !== 'undefined'
+    ? Buffer.from(googleServicesJson, 'utf8').toString('base64')
+    : btoa(unescape(encodeURIComponent(googleServicesJson)));
 
   return `name: Build Real Android APK & AAB
 
@@ -389,9 +390,7 @@ jobs:
           ${iconScript}
 
           # 6. Embedded google-services.json for Firebase Push Notifications
-          cat << 'EOF' > android/app/google-services.json
-${googleServicesJson}
-EOF
+          printf '%s' "${googleServicesJsonBase64}" | base64 -d > android/app/google-services.json
 
           # 7. Layout activity_main.xml (clean full viewport)
           cat << 'EOF' > android/app/src/main/res/layout/activity_main.xml

@@ -537,12 +537,12 @@ export async function triggerCloudBuild(
       rawMsg = errData.message || rawMsg;
     }
 
-    // Scenario B: GitHub Actions is still indexing after recent sync or branch mismatch
+    // Scenario B: GitHub Actions reports missing workflow_dispatch trigger or still indexing
     if (
       (response.status === 422 && rawMsg.includes('workflow_dispatch')) ||
       response.status === 404
     ) {
-      // Check alternative branch (e.g. if 'main' was used, check 'master')
+      // 1. First check if master branch has the workflow
       const altBranch = targetBranch === 'main' ? 'master' : 'main';
       const altRes = await doDispatch(altBranch, payloadInputs);
       if (altRes.status === 204) {
@@ -554,7 +554,33 @@ export async function triggerCloudBuild(
         };
       }
 
-      // If still not indexed, wait 2 seconds and retry once more
+      // 2. The remote workflow might have had a YAML syntax error (e.g. invalid multiline base64)
+      // Automatically attempt to sync the corrected valid workflow to GitHub!
+      try {
+        const syncRes = await syncWorkflowFileToRepo(
+          { ...config, branch: targetBranch },
+          customWorkflowYml || LATEST_WORKFLOW_YML
+        );
+        if (syncRes.success) {
+          // Wait 3 seconds for GitHub Actions engine to index the corrected YAML
+          await new Promise((r) => setTimeout(r, 3000));
+          const postSyncRes = await doDispatch(targetBranch, payloadInputs);
+          if (postSyncRes.status === 204) {
+            return {
+              success: true,
+              branchUsed: targetBranch,
+              inputsDispatched: payloadInputs,
+              actionUrl: `https://github.com/${config.owner.trim()}/${config.repo.trim()}/actions/workflows/build-apk.yml`,
+            };
+          }
+          const postSyncData = await postSyncRes.json().catch(() => ({}));
+          rawMsg = postSyncData.message || rawMsg;
+        }
+      } catch (syncErr) {
+        console.warn('Auto-sync workflow on dispatch failure error:', syncErr);
+      }
+
+      // 3. One final retry after short delay
       await new Promise((r) => setTimeout(r, 2000));
       const retryRes2 = await doDispatch(targetBranch, payloadInputs);
       if (retryRes2.status === 204) {
@@ -573,7 +599,7 @@ export async function triggerCloudBuild(
     if (response.status === 404) {
       return {
         success: false,
-        error: `Alur kerja "build-apk.yml" belum ditemukan di GitHub pada branch "${targetBranch}". Silakan klik tombol "Sinkronkan Workflow ke GitHub Sekarang" atau pastikan berkas .github/workflows/build-apk.yml ada di repositori Anda.`,
+        error: `Alur kerja "build-apk.yml" belum ditemukan di GitHub pada branch "${targetBranch}". Silakan klik tombol "Sinkronkan Desain & Alur Kerja ke GitHub" atau pastikan berkas .github/workflows/build-apk.yml ada di repositori Anda.`,
         actionUrl: `https://github.com/${config.owner.trim()}/${config.repo.trim()}/actions`,
       };
     }
@@ -581,7 +607,7 @@ export async function triggerCloudBuild(
     if (rawMsg.includes('workflow_dispatch')) {
       return {
         success: false,
-        error: `GitHub melaporkan: "${rawMsg}". Berkas alur kerja di branch "${targetBranch}" belum memiliki trigger 'workflow_dispatch:' atau masih dalam antrean indeks GitHub. Silakan buka halaman Actions di GitHub untuk menjalankannya.`,
+        error: `GitHub melaporkan: "${rawMsg}". Kemungkinan berkas alur kerja di GitHub memiliki kesalahan format YAML atau sedang diindeks oleh GitHub. Kami telah menyediakan perbaikan otomatis: silakan klik tombol "Sinkronkan Desain & Alur Kerja ke GitHub" di atas untuk memperbarui berkas repositori secara bersih.`,
         actionUrl: `https://github.com/${config.owner.trim()}/${config.repo.trim()}/actions/workflows/build-apk.yml`,
       };
     }
